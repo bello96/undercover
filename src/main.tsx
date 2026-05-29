@@ -103,7 +103,11 @@ install({
   },
 });
 
-// App.tsx 在后续单元实现，此处用占位渲染保证可编译可启动
+import React from "react";
+import App from "./App";
+
 createRoot(document.getElementById("root")!).render(
-  <div className="p-8 text-ink">谁是卧底 · boot</div>,
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
 );
