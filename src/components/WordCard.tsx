@@ -49,7 +49,7 @@ export default function WordCard({ word, eliminated }: Props) {
           {word}
         </p>
       ) : (
-        <p className={tx("text-subhead text-ink-muted")}>—</p>
+        <p className={tx("text-subhead text-ink-subtle")}>加载中…</p>
       )}
     </div>
   );

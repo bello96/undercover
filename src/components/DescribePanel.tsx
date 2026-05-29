@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { tx } from "@twind/core";
 import type { DescribeEntry, PlayerInfo } from "../types/protocol";
 
@@ -26,6 +26,13 @@ export default function DescribePanel({
   onSubmit,
 }: Props) {
   const [inputText, setInputText] = useState("");
+
+  // 失去发言权时清空草稿，避免下一轮重获发言权时残留上轮未提交内容
+  useEffect(() => {
+    if (!isMyTurn) {
+      setInputText("");
+    }
+  }, [isMyTurn]);
 
   const currentRoundDescriptions = descriptions.filter((d) => d.round === round);
 
@@ -61,9 +68,9 @@ export default function DescribePanel({
       {/* 已发言记录 */}
       {currentRoundDescriptions.length > 0 ? (
         <ul className={tx("flex flex-col gap-2")}>
-          {currentRoundDescriptions.map((entry, idx) => (
+          {currentRoundDescriptions.map((entry) => (
             <li
-              key={idx}
+              key={`${entry.playerId}-${entry.round}`}
               className={tx(
                 "px-3 py-2 rounded-lg bg-surface-2 border border-hairline",
                 "text-body-sm text-ink",
