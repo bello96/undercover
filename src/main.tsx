@@ -33,6 +33,9 @@ install({
         "brand-secure": "#7a7fad",
         // Semantic
         "semantic-success": "#27a644",
+        // DESIGN.md 未定义 error/danger 语义色（营销画布刻意避红）；
+        // 取 Linear 产品内 issue 优先级红系的柔和红，贴合深色风格。
+        "semantic-error": "#eb5757",
         "semantic-overlay": "#000000",
         // Inverse (for rare inverse CTAs)
         "inverse-canvas": "#ffffff",
