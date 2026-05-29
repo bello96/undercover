@@ -889,7 +889,12 @@ export class GameRoom implements DurableObject {
       eliminatedId,
       ...(role ? { eliminatedRole: role } : {}),
     });
-    this.broadcast({ type: "phaseChange", phase: "reveal", round: this.round });
+    this.broadcast({
+      type: "phaseChange",
+      phase: "reveal",
+      round: this.round,
+      deadline: this.phaseDeadline,
+    });
   }
 
   /** reveal 到点：判胜负 → 结束 或 下一轮描述。 */
@@ -906,6 +911,10 @@ export class GameRoom implements DurableObject {
     } else {
       this.round++;
       this.descriptions = [];
+      // 清空上轮投票状态：否则下一轮描述期间残留旧投票，重连玩家会收到脏 votedPlayerIds
+      this.votes = {};
+      this.voteRound = 1;
+      this.tiebreakCandidates = [];
       this.startDescribingRound();
       await this.saveState();
       this.broadcast({
@@ -931,9 +940,10 @@ export class GameRoom implements DurableObject {
     this.broadcast({
       type: "gameOver",
       winner,
-      undercoverId: this.undercoverId,
-      civilianWord: this.civilianWord,
-      undercoverWord: this.undercoverWord,
+      // endGame 仅在游戏中触发，这三者必非 null（S_GameOver 要求 string）
+      undercoverId: this.undercoverId!,
+      civilianWord: this.civilianWord!,
+      undercoverWord: this.undercoverWord!,
       roles,
     });
   }
@@ -948,19 +958,8 @@ export class GameRoom implements DurableObject {
       return;
     }
     this.phase = "lobby";
-    this.civilianWord = null;
-    this.undercoverWord = null;
-    this.undercoverId = null;
-    this.eliminatedIds = [];
-    this.round = 0;
-    this.speakingOrder = [];
-    this.currentSpeakerIndex = 0;
-    this.descriptions = [];
-    this.votes = {};
-    this.voteRound = 1;
-    this.tiebreakCandidates = [];
-    this.phaseDeadline = 0;
-    this.lastRevealEliminatedId = null;
+    this.resetGameplayFields();
+    // 注意：不重置 recentWordIndices —— 再来一局仍保留跨局发词去重
     await this.saveState();
     this.broadcast({ type: "phaseChange", phase: "lobby", round: 0 });
   }
@@ -1113,6 +1112,8 @@ export class GameRoom implements DurableObject {
         await this.saveState();
       }
     } else {
+      // reveal（及其他）是纯展示阶段，无发言序需修复；
+      // alarm 到点会调 advanceAfterReveal 推进，这里仅落盘玩家移除即可
       await this.saveState();
     }
   }
@@ -1131,6 +1132,13 @@ export class GameRoom implements DurableObject {
     // 时，scheduleNextAlarm 可能基于旧值算出已过期的 inactivity 时间点。
     this.lastActivityAt = 0;
     // 玩法字段
+    this.resetGameplayFields();
+    // 空房 / inactivity 关闭额外清空跨局去重（onNextGame 则保留）
+    this.recentWordIndices = [];
+  }
+
+  /** 重置所有玩法字段到开局前（不含 base 字段，也不含 recentWordIndices）。 */
+  private resetGameplayFields() {
     this.civilianWord = null;
     this.undercoverWord = null;
     this.undercoverId = null;
@@ -1143,7 +1151,6 @@ export class GameRoom implements DurableObject {
     this.voteRound = 1;
     this.tiebreakCandidates = [];
     this.phaseDeadline = 0;
-    this.recentWordIndices = [];
     this.lastRevealEliminatedId = null;
   }
 
