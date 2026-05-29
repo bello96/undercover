@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+worker/node_modules/
+
+# build output
+dist/
+worker/dist/
+
+# cloudflare
+.wrangler/
+worker/.wrangler/
+
+# env / secrets
+.dev.vars
+worker/.dev.vars
+
+# logs
+*.log
+npm-debug.log*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.local
