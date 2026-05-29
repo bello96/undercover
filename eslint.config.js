@@ -10,6 +10,8 @@ export default [
       "**/node_modules/**",
       "**/.wrangler/**",
       "**/.dev.vars",
+      // config 文件（vite/eslint/prettier 等）由 tsconfig.node.json 单独做类型检查，
+      // 不纳入应用 lint，避免 Node 环境写法触发面向浏览器代码的规则。
       "*.config.*",
       "worker/*.config.*",
       "tsconfig.tsbuildinfo",

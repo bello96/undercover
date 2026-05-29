@@ -28,10 +28,15 @@ install({
         hairline: "#23252a",
         "hairline-strong": "#34343a",
         "hairline-tertiary": "#3e3e44",
+        // Brand
+        "brand-secure": "#7a7fad",
         // Semantic
-        success: "#27a644",
+        "semantic-success": "#27a644",
+        "semantic-overlay": "#000000",
         // Inverse (for rare inverse CTAs)
         "inverse-canvas": "#ffffff",
+        "inverse-surface-1": "#f5f6f6",
+        "inverse-surface-2": "#f6f7f7",
         "inverse-ink": "#000000",
       },
       fontFamily: {

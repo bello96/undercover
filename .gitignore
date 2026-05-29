@@ -5,6 +5,7 @@ worker/node_modules/
 # build output
 dist/
 worker/dist/
+*.tsbuildinfo
 
 # cloudflare
 .wrangler/
