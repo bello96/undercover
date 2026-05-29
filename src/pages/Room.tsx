@@ -8,6 +8,8 @@ import DescribePanel from "../components/DescribePanel";
 import VotePanel from "../components/VotePanel";
 import RevealOverlay from "../components/RevealOverlay";
 import GameOver from "../components/GameOver";
+import Toast from "../components/Toast";
+import ChatPanel from "../components/ChatPanel";
 import { PLAYER_ID_KEY } from "../App";
 import type {
   GamePhase,
@@ -85,7 +87,7 @@ const INITIAL_ROOM_VIEW: RoomView = {
 export default function Room({ roomCode, playerName, playerId, onLeave }: Props) {
   const [view, setView] = useState<RoomView>(INITIAL_ROOM_VIEW);
   const [joinError, setJoinError] = useState("");
-  const [toast, setToast] = useState<{ message: string; id: number } | null>(null);
+  const [toast, setToast] = useState<{ message: string; id: number; type: "error" | "info" | "success" } | null>(null);
 
   // 是否曾成功加入（收到 roomState + myId）。重连时跳过 10s 超时。
   const hasJoinedOnceRef = useRef(false);
@@ -150,7 +152,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
           setView((prev) => {
             const leaving = prev.players.find((p) => p.id === msg.playerId);
             const name = leaving?.name ?? "玩家";
-            setToast({ message: `${name}（${roleName}）离开了`, id: Date.now() });
+            setToast({ message: `${name}（${roleName}）离开了`, id: Date.now(), type: "info" });
             return {
               ...prev,
               players: prev.players.filter((p) => p.id !== msg.playerId),
@@ -277,7 +279,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
         if (!view.myId) {
           setJoinError(msg.message);
         } else {
-          setToast({ message: msg.message, id: Date.now() });
+          setToast({ message: msg.message, id: Date.now(), type: "error" });
         }
         break;
       }
@@ -329,14 +331,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
     return () => window.clearTimeout(timer);
   }, [joinError, onLeave]);
 
-  // toast 自动消失
-  useEffect(() => {
-    if (!toast) {
-      return;
-    }
-    const timer = window.setTimeout(() => setToast(null), 3000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
+  // toast 自动消失由 <Toast> 组件内部通过 onClose 回调处理，此处无需额外 useEffect
 
   // ------------------------------------------------------------------
   // 渲染：未加入 / 出错 → 全屏提示；已加入断线 → 保留主 UI + 顶部 banner
@@ -402,15 +397,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
 
       {/* Toast */}
       {toast && (
-        <div
-          className={tx(
-            "fixed top-4 left-1/2 -translate-x-1/2 z-50",
-            "bg-surface-2 border border-hairline text-ink text-body-sm",
-            "px-4 py-2 rounded-lg shadow-lg",
-          )}
-        >
-          {toast.message}
-        </div>
+        <Toast
+          key={toast.id}
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
 
       {/* 阶段路由 */}
@@ -458,7 +450,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
             onSubmit={(text) => send({ type: "describe", text })}
           />
 
-          {/* TODO(单元13): ChatPanel */}
+          {/* 聊天面板 */}
+          <ChatPanel
+            messages={view.chatMessages}
+            myId={view.myId}
+            onSend={(text) => send({ type: "chat", text })}
+          />
         </div>
       )}
 
@@ -493,7 +490,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
             onVote={(targetId) => send({ type: "vote", targetId })}
           />
 
-          {/* TODO(单元13): ChatPanel */}
+          {/* 聊天面板 */}
+          <ChatPanel
+            messages={view.chatMessages}
+            myId={view.myId}
+            onSend={(text) => send({ type: "chat", text })}
+          />
         </div>
       )}
 
@@ -519,6 +521,13 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
               players={players}
             />
           )}
+
+          {/* 聊天面板 */}
+          <ChatPanel
+            messages={view.chatMessages}
+            myId={view.myId}
+            onSend={(text) => send({ type: "chat", text })}
+          />
         </div>
       )}
 
