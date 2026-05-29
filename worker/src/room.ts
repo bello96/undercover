@@ -103,6 +103,7 @@ export class GameRoom implements DurableObject {
       "voteRound",
       "tiebreakCandidates",
       "phaseDeadline",
+      "lastRevealEliminatedId",
     ]);
 
     this.created = (data.get("created") as boolean) ?? false;
@@ -132,6 +133,7 @@ export class GameRoom implements DurableObject {
     this.voteRound = (data.get("voteRound") as 1 | 2) ?? 1;
     this.tiebreakCandidates = (data.get("tiebreakCandidates") as string[]) ?? [];
     this.phaseDeadline = (data.get("phaseDeadline") as number) ?? 0;
+    this.lastRevealEliminatedId = (data.get("lastRevealEliminatedId") as string | null) ?? null;
   }
 
   private async saveState() {
@@ -158,6 +160,7 @@ export class GameRoom implements DurableObject {
       voteRound: this.voteRound,
       tiebreakCandidates: this.tiebreakCandidates,
       phaseDeadline: this.phaseDeadline,
+      lastRevealEliminatedId: this.lastRevealEliminatedId,
     });
   }
 
@@ -249,13 +252,17 @@ export class GameRoom implements DurableObject {
     const joined = new Map(this.getJoinedWebSockets().map(({ player }) => [player.id, player]));
     const result: PlayerInfoWire[] = [];
     for (const id of this.joinOrder) {
-      const player = joined.get(id);
-      if (player) {
+      // 名字来源：先查已连接 ws，再回退到 grace 期断线玩家；都没有才跳过。
+      // 这样重连宽限期内的玩家（isPlayerActive 含之）仍留在 roster，
+      // 避免「当前发言者不在玩家列表」的 UI 不一致。
+      const p = joined.get(id);
+      const name = p?.name ?? this.disconnectedPlayers.get(id)?.name;
+      if (name !== undefined) {
         result.push({
-          id: player.id,
-          name: player.name,
-          isHost: player.id === this.hostId,
-          alive: this.isPlayerActive(player.id) && !this.eliminatedIds.includes(player.id),
+          id,
+          name,
+          isHost: id === this.hostId,
+          alive: this.isPlayerActive(id) && !this.eliminatedIds.includes(id),
         });
       }
     }
