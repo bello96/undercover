@@ -5,6 +5,9 @@ import Lobby from "../components/Lobby";
 import WordCard from "../components/WordCard";
 import PlayerList from "../components/PlayerList";
 import DescribePanel from "../components/DescribePanel";
+import VotePanel from "../components/VotePanel";
+import RevealOverlay from "../components/RevealOverlay";
+import GameOver from "../components/GameOver";
 import { PLAYER_ID_KEY } from "../App";
 import type {
   GamePhase,
@@ -381,20 +384,6 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
     gameOver,
   } = view;
 
-  // 通用：简版玩家列表（供占位视图展示）
-  const simplePlayerList = (
-    <ul className={tx("text-body-sm text-ink-subtle space-y-1")}>
-      {players.map((p) => (
-        <li key={p.id} className={tx("flex items-center gap-2")}>
-          <span>{p.name}</span>
-          {p.id === myId && <span className={tx("text-primary text-caption")}>(我)</span>}
-          {p.isHost && <span className={tx("text-ink-subtle text-caption")}>[房主]</span>}
-          {!p.alive && <span className={tx("text-ink-tertiary text-caption")}>[已出局]</span>}
-        </li>
-      ))}
-    </ul>
-  );
-
   return (
     <div className={tx("min-h-screen bg-canvas text-ink flex flex-col")}>
       {/* 重连 banner：已加入后断线才显示，不阻断主 UI */}
@@ -472,109 +461,77 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       )}
 
       {phase === "voting" && (
-        <div
-          className={tx(
-            "flex-1 flex items-center justify-center p-8",
-          )}
-        >
-          <div
-            className={tx(
-              "bg-surface-1 border border-hairline rounded-xl p-8 max-w-md w-full space-y-4",
-            )}
-          >
-            <h2 className={tx("text-headline font-display font-semibold text-ink")}>
-              投票阶段 — 第 {round} 轮
-            </h2>
-            {yourWord && (
-              <p className={tx("text-body text-ink-muted")}>
-                你的词：<span className={tx("text-ink font-medium")}>{yourWord}</span>
-              </p>
-            )}
-            <p className={tx("text-body-sm text-ink-subtle")}>
-              已投票：{votedPlayerIds.length} 人
-            </p>
-            {tiebreakCandidates.length > 0 && (
-              <p className={tx("text-body-sm text-ink-subtle")}>
-                平票加时赛候选：{tiebreakCandidates.join("、")}
-              </p>
-            )}
-            {simplePlayerList}
-          </div>
+        <div className={tx("flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full flex flex-col gap-4")}>
+          {/* 阶段标题 */}
+          <h2 className={tx("text-headline font-display font-semibold text-ink")}>
+            投票阶段 — 第 {round} 轮
+          </h2>
+
+          {/* 词卡：供参考，不显示身份 */}
+          <WordCard
+            word={yourWord}
+            eliminated={!players.find((p) => p.id === myId)?.alive}
+          />
+
+          {/* 玩家列表：显示已投票徽标 */}
+          <PlayerList
+            players={players}
+            myId={myId}
+            phase={phase}
+            votedPlayerIds={votedPlayerIds}
+          />
+
+          {/* 投票面板 */}
+          <VotePanel
+            players={players}
+            myId={myId}
+            votedPlayerIds={votedPlayerIds}
+            tiebreakCandidates={tiebreakCandidates}
+            deadline={view.deadline}
+            onVote={(targetId) => send({ type: "vote", targetId })}
+          />
+
+          {/* TODO(单元13): ChatPanel */}
         </div>
       )}
 
       {phase === "reveal" && (
-        <div
-          className={tx(
-            "flex-1 flex items-center justify-center p-8",
+        <div className={tx("flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full flex flex-col gap-4")}>
+          {/* 阶段标题 */}
+          <h2 className={tx("text-headline font-display font-semibold text-ink")}>
+            公布阶段
+          </h2>
+
+          {/* 玩家列表：反映最新存活状态 */}
+          <PlayerList
+            players={players}
+            myId={myId}
+            phase={phase}
+          />
+
+          {/* 出局揭晓覆盖层 */}
+          {view.voteResult !== null && (
+            <RevealOverlay
+              eliminatedId={view.voteResult.eliminatedId}
+              eliminatedRole={view.voteResult.eliminatedRole}
+              players={players}
+            />
           )}
-        >
-          <div
-            className={tx(
-              "bg-surface-1 border border-hairline rounded-xl p-8 max-w-md w-full space-y-4",
-            )}
-          >
-            <h2 className={tx("text-headline font-display font-semibold text-ink")}>
-              公布阶段
-            </h2>
-            {yourWord && (
-              <p className={tx("text-body text-ink-muted")}>
-                你的词：<span className={tx("text-ink font-medium")}>{yourWord}</span>
-              </p>
-            )}
-            {view.voteResult?.eliminatedId && (
-              <p className={tx("text-body-sm text-ink-subtle")}>
-                本轮出局：
-                {players.find((p) => p.id === view.voteResult?.eliminatedId)?.name ?? "—"}
-                {view.voteResult.eliminatedRole &&
-                  `（${view.voteResult.eliminatedRole === "undercover" ? "卧底" : "平民"}）`}
-              </p>
-            )}
-            {simplePlayerList}
-          </div>
         </div>
       )}
 
-      {phase === "ended" && (
-        <div
-          className={tx(
-            "flex-1 flex items-center justify-center p-8",
-          )}
-        >
-          <div
-            className={tx(
-              "bg-surface-1 border border-hairline rounded-xl p-8 max-w-md w-full space-y-4",
-            )}
-          >
-            <h2 className={tx("text-headline font-display font-semibold text-ink")}>
-              游戏结束
-            </h2>
-            {gameOver && (
-              <>
-                <p className={tx("text-body text-ink")}>
-                  胜者：
-                  <span className={tx("font-medium")}>
-                    {gameOver.winner === "civilian" ? "平民" : "卧底"}
-                  </span>
-                </p>
-                <p className={tx("text-body-sm text-ink-muted")}>
-                  平民词：{gameOver.civilianWord} / 卧底词：{gameOver.undercoverWord}
-                </p>
-              </>
-            )}
-            {simplePlayerList}
-            <button
-              onClick={handleLeave}
-              className={tx(
-                "w-full px-4 py-2 rounded-lg text-button font-medium",
-                "bg-surface-2 border border-hairline text-ink",
-                "hover:border-hairline-strong transition-colors",
-              )}
-            >
-              返回首页
-            </button>
-          </div>
-        </div>
+      {phase === "ended" && gameOver !== null && (
+        <GameOver
+          winner={gameOver.winner}
+          undercoverId={gameOver.undercoverId}
+          civilianWord={gameOver.civilianWord}
+          undercoverWord={gameOver.undercoverWord}
+          roles={gameOver.roles}
+          players={players}
+          isHost={hostId === myId}
+          onNextGame={() => send({ type: "nextGame" })}
+          onLeave={handleLeave}
+        />
       )}
     </div>
   );
