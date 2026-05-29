@@ -588,6 +588,19 @@ export class GameRoom implements DurableObject {
           return;
         }
       }
+
+      // 仍在花名册但既不在宽限期、也无存活旧连接 → 视为合法重连。
+      // 典型成因：DO 被回收 / 抖动，webSocketClose 未及运行（玩家从未进入
+      // disconnectedPlayers），但其 id 仍由 startGame 持久化在 joinOrder 中。
+      // 不恢复就会被下方「新玩家」闸门当成中途加入而拒绝，客户端随即陷入
+      // 「重连 → 被拒 → 再重连」死循环（疯狂弹「游戏已开始，无法加入」）。
+      if (this.joinOrder.includes(playerId)) {
+        const name = (playerName || "玩家").slice(0, MAX_NAME_LENGTH);
+        const p: PlayerAttachment = { id: playerId, name };
+        ws.serializeAttachment(p);
+        this.buildRoomState(ws, p.id);
+        return;
+      }
     }
 
     // 新玩家：只能在 lobby 加入

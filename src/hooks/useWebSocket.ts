@@ -10,6 +10,7 @@ const TERMINAL_CLOSE_REASONS = new Set([
   "left", // local user clicked leave
   "room not found",
   "room full",
+  "game in progress", // 中途无法加入（含超时出局/被踢后重连）——再连仍会被拒，停止重连
   "inactivity", // server auto-closed after idle timeout
   "reconnected", // server take-over from another tab/device
   "rate limited", // server rate-limited us; reconnecting would just get kicked again

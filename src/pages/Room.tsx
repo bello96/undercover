@@ -281,8 +281,11 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       }
 
       case "error": {
-        // 未成功加入时走 joinError 路径（统一退出）；已加入则弹 toast
-        if (!view.myId) {
+        // 「游戏已开始，无法加入」是会话级致命错误：服务端随即关闭连接，
+        // 且重连仍会被拒。无论是否已加入都走 joinError 统一退出，避免卡在
+        // 「网络异常，正在重连…」假象里反复弹窗。其余错误：未加入走 joinError
+        // 统一退出，已加入仅弹 toast（如「至少需要 3 人才能开始」）。
+        if (msg.message === "游戏已开始，无法加入" || !view.myId) {
           setJoinError(msg.message);
         } else {
           setToast({ message: msg.message, id: Date.now(), type: "error" });
