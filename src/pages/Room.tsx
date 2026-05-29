@@ -2,6 +2,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { tx } from "@twind/core";
 import { useWebSocket } from "../hooks/useWebSocket";
 import Lobby from "../components/Lobby";
+import WordCard from "../components/WordCard";
+import PlayerList from "../components/PlayerList";
+import DescribePanel from "../components/DescribePanel";
 import { PLAYER_ID_KEY } from "../App";
 import type {
   GamePhase,
@@ -431,34 +434,40 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
         />
       )}
 
-      {/* TODO(单元11-13): 替换为描述/投票/公布/结算视图 + ChatPanel */}
+      {/* 描述阶段 */}
       {phase === "describing" && (
-        <div
-          className={tx(
-            "flex-1 flex items-center justify-center p-8",
-          )}
-        >
-          <div
-            className={tx(
-              "bg-surface-1 border border-hairline rounded-xl p-8 max-w-md w-full space-y-4",
-            )}
-          >
-            <h2 className={tx("text-headline font-display font-semibold text-ink")}>
-              描述阶段 — 第 {round} 轮
-            </h2>
-            {yourWord && (
-              <p className={tx("text-body text-ink-muted")}>
-                你的词：<span className={tx("text-ink font-medium")}>{yourWord}</span>
-              </p>
-            )}
-            <p className={tx("text-body-sm text-ink-subtle")}>
-              当前发言：{players.find((p) => p.id === currentSpeakerId)?.name ?? "—"}
-            </p>
-            <p className={tx("text-body-sm text-ink-subtle")}>
-              已发言：{descriptions.length} 人
-            </p>
-            {simplePlayerList}
-          </div>
+        <div className={tx("flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full flex flex-col gap-4")}>
+          {/* 阶段标题 */}
+          <h2 className={tx("text-headline font-display font-semibold text-ink")}>
+            描述阶段 — 第 {round} 轮
+          </h2>
+
+          {/* 词卡：只显示词，绝不显示身份 */}
+          <WordCard
+            word={yourWord}
+            eliminated={!players.find((p) => p.id === myId)?.alive}
+          />
+
+          {/* 玩家列表：高亮当前发言者 + 倒计时 */}
+          <PlayerList
+            players={players}
+            myId={myId}
+            currentSpeakerId={currentSpeakerId}
+            deadline={view.deadline}
+            phase={phase}
+          />
+
+          {/* 描述面板：本轮记录 + 输入区 */}
+          <DescribePanel
+            descriptions={descriptions}
+            round={round}
+            players={players}
+            isMyTurn={currentSpeakerId === myId}
+            currentSpeakerName={players.find((p) => p.id === currentSpeakerId)?.name}
+            onSubmit={(text) => send({ type: "describe", text })}
+          />
+
+          {/* TODO(单元13): ChatPanel */}
         </div>
       )}
 
