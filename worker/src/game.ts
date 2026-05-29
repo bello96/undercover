@@ -52,8 +52,9 @@ export function tallyVotes(votes: Record<string, string>): {
 // ─────────────────── Task 7 ───────────────────
 
 /**
- * 出局后判胜负。按序：卧底出局→平民胜；否则存活==2→卧底胜；否则继续(null)。
+ * 出局后判胜负。按序：卧底出局→平民胜；否则存活<=2→卧底胜；否则继续(null)。
  * eliminatedRole=null 表示本轮无人淘汰（平票）。
+ * aliveCount<=2 而非==2 为防御增强：合法输入行为不变，避免极端态挂死。
  */
 export function checkWin(
   eliminatedRole: "civilian" | "undercover" | null,
@@ -62,7 +63,7 @@ export function checkWin(
   if (eliminatedRole === "undercover") {
     return "civilian";
   }
-  if (aliveCount === 2) {
+  if (aliveCount <= 2) {
     return "undercover";
   }
   return null;
@@ -109,7 +110,7 @@ export function pickFallback(
   bank: [string, string][],
   recent: number[],
   rand: () => number,
-): { index: number; civilianWord: string; undercoverWord: string } {
+): WordPair & { index: number } {
   const recentSet = new Set(recent);
   const pool = bank.map((_, i) => i).filter((i) => !recentSet.has(i));
   const candidates = pool.length > 0 ? pool : bank.map((_, i) => i);

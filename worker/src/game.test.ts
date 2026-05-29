@@ -27,6 +27,7 @@ describe("tallyVotes", () => {
   });
   it("平票返回多个候选", () => {
     const r = tallyVotes({ a: "x", b: "y" });
+    expect(r.counts).toEqual({ x: 1, y: 1 });
     expect(r.topIds.sort()).toEqual(["x", "y"]);
   });
   it("无人投票时 topIds 为空", () => {
@@ -40,6 +41,9 @@ describe("checkWin", () => {
   });
   it("出局平民后只剩2人 → 卧底胜", () => {
     expect(checkWin("civilian", 2)).toBe("undercover");
+  });
+  it("存活不足2人（边界）→ 卧底胜", () => {
+    expect(checkWin("civilian", 1)).toBe("undercover");
   });
   it("出局平民但仍>2人 → 继续", () => {
     expect(checkWin("civilian", 3)).toBeNull();
