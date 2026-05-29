@@ -3,6 +3,7 @@ import {
   INACTIVITY_TIMEOUT_MS,
   MAX_CHAT_HISTORY,
   MAX_CHAT_LENGTH,
+  MAX_DESCRIBE_LENGTH,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -11,7 +12,11 @@ import {
   RATE_LIMIT_MAX_MSGS,
   RATE_LIMIT_WINDOW_MS,
   RECONNECT_GRACE_MS,
+  TURN_MS,
+  VOTE_MS,
 } from "./constants";
+import { computeSpeakingOrder, pickUndercover } from "./game";
+import { getWordPair } from "./words";
 import type {
   ChatEntry,
   DescribeEntry,
@@ -403,7 +408,13 @@ export class GameRoom implements DurableObject {
       case "leave":
         await this.onLeave(ws);
         break;
-      // startGame/describe/vote/nextGame —— 后续单元追加
+      case "startGame":
+        await this.onStartGame(ws);
+        break;
+      case "describe":
+        await this.onDescribe(ws, msg.text as string);
+        break;
+      // vote/nextGame —— 后续单元追加
     }
   }
 
@@ -463,7 +474,15 @@ export class GameRoom implements DurableObject {
     }
 
     // --- 3. Phase deadline (describing/voting/reveal) ---
-    // TODO(单元7/8): describing/voting/reveal 超时处理
+    if (this.phaseDeadline > 0 && now >= this.phaseDeadline) {
+      if (this.phase === "describing") {
+        // 当前发言者超时：记空描述并推进（recordDescription 内部会推进发言者）
+        const speakerId = this.speakingOrder[this.currentSpeakerIndex];
+        this.recordDescription(speakerId, "（未描述）");
+        await this.saveState();
+      }
+      // TODO(单元8): voting / reveal 超时分支
+    }
 
     // --- 4. Schedule next alarm if needed ---
     this.scheduleNextAlarm();
@@ -637,6 +656,133 @@ export class GameRoom implements DurableObject {
       playerName: player.name,
       text: trimmed,
       timestamp,
+    });
+  }
+
+  // ============ Gameplay: startGame / describe ============
+
+  /** 当前在场且未出局的玩家 id（按 joinOrder）。 */
+  private aliveIds(): string[] {
+    return this.joinOrder.filter(
+      (id) => this.isPlayerActive(id) && !this.eliminatedIds.includes(id),
+    );
+  }
+
+  /** host 开局：发词、分配卧底、进入首轮描述，逐 ws 个性化下发各自的词。 */
+  private async onStartGame(ws: WebSocket) {
+    const player = this.getPlayer(ws);
+    if (!player || player.id !== this.hostId) {
+      return;
+    }
+    if (this.phase !== "lobby") {
+      return;
+    }
+    if (this.getJoinedCount() < MIN_PLAYERS) {
+      this.send(ws, { type: "error", message: `至少需要 ${MIN_PLAYERS} 人才能开始` });
+      return;
+    }
+
+    // 发词（DeepSeek → 兜底）
+    const { pair, bankIndex } = await getWordPair(this.env, this.recentWordIndices);
+    if (bankIndex >= 0) {
+      this.recentWordIndices.push(bankIndex);
+      if (this.recentWordIndices.length > 10) {
+        this.recentWordIndices.shift();
+      }
+    }
+    this.civilianWord = pair.civilianWord;
+    this.undercoverWord = pair.undercoverWord;
+
+    // 分配身份（仅在场玩家参与）
+    const players = this.joinOrder.filter((id) => this.isPlayerActive(id));
+    this.undercoverId = pickUndercover(players, Math.random);
+    this.eliminatedIds = [];
+    this.round = 1;
+    this.descriptions = [];
+    this.votes = {};
+    this.voteRound = 1;
+    this.tiebreakCandidates = [];
+
+    this.startDescribingRound();
+
+    // 逐 ws 个性化下发各自的词
+    for (const { ws: w, player: p } of this.getJoinedWebSockets()) {
+      this.send(w, {
+        type: "gameStarted",
+        yourWord: p.id === this.undercoverId ? this.undercoverWord : this.civilianWord,
+        round: this.round,
+        speakingOrder: this.speakingOrder,
+        currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
+        deadline: this.phaseDeadline,
+      });
+    }
+    await this.saveState();
+  }
+
+  /** 开一轮描述：随机首发言者，设 phase/deadline/alarm。 */
+  private startDescribingRound() {
+    const alive = this.aliveIds();
+    const startIndex = Math.floor(Math.random() * alive.length);
+    this.speakingOrder = computeSpeakingOrder(alive, startIndex);
+    this.currentSpeakerIndex = 0;
+    this.phase = "describing";
+    this.phaseDeadline = Date.now() + TURN_MS;
+    this.scheduleNextAlarm();
+  }
+
+  /** 当前发言者提交描述。非当前发言者 / 非描述阶段 / 空内容均忽略。 */
+  private async onDescribe(ws: WebSocket, text: string) {
+    const player = this.getPlayer(ws);
+    if (!player || this.phase !== "describing") {
+      return;
+    }
+    if (player.id !== this.speakingOrder[this.currentSpeakerIndex]) {
+      return; // 非当前发言者
+    }
+    const trimmed = (text || "").trim().slice(0, MAX_DESCRIBE_LENGTH);
+    if (!trimmed) {
+      return;
+    }
+    this.recordDescription(player.id, trimmed);
+    await this.saveState();
+  }
+
+  /** 记录描述并推进；广播 describeUpdate；轮完则转投票。 */
+  private recordDescription(playerId: string, text: string) {
+    this.descriptions.push({ playerId, text, round: this.round });
+    this.broadcast({ type: "describeUpdate", playerId, text, round: this.round });
+    this.advanceSpeaker();
+  }
+
+  /** 推进到下一位发言者；全部发言完毕则进入投票。 */
+  private advanceSpeaker() {
+    this.currentSpeakerIndex++;
+    if (this.currentSpeakerIndex >= this.speakingOrder.length) {
+      this.enterVoting();
+    } else {
+      this.phaseDeadline = Date.now() + TURN_MS;
+      this.scheduleNextAlarm();
+      this.broadcast({
+        type: "turnChange",
+        currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
+        deadline: this.phaseDeadline,
+      });
+    }
+  }
+
+  /** 进入投票阶段（真正的投票 handler 在后续单元）。 */
+  private enterVoting() {
+    this.phase = "voting";
+    this.votes = {};
+    this.voteRound = 1;
+    this.tiebreakCandidates = [];
+    this.phaseDeadline = Date.now() + VOTE_MS;
+    this.scheduleNextAlarm();
+    this.broadcast({
+      type: "phaseChange",
+      phase: "voting",
+      round: this.round,
+      deadline: this.phaseDeadline,
     });
   }
 
