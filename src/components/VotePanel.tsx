@@ -51,7 +51,7 @@ export default function VotePanel({
 
   // 可投目标：存活玩家排除自己；加赛时只列候选人
   const votableTargets = isTiebreak
-    ? players.filter((p) => tiebreakCandidates.includes(p.id))
+    ? players.filter((p) => p.alive && tiebreakCandidates.includes(p.id))
     : players.filter((p) => p.alive && p.id !== myId);
 
   // 已出局，只能观战

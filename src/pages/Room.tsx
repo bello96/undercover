@@ -192,6 +192,8 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
           deadline: msg.deadline ?? prev.deadline,
           speakingOrder: msg.speakingOrder ?? prev.speakingOrder,
           tiebreakCandidates: msg.tiebreakCandidates ?? [],
+          // 离开 reveal 进入新阶段时清掉上轮出局数据，避免残留
+          voteResult: null,
         }));
         break;
       }
