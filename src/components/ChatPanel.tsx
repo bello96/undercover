@@ -88,7 +88,8 @@ export default function ChatPanel({ messages, myId, onSend }: Props) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            // 排除中文/日文等输入法组合态，避免选字时按 Enter 误发半成品
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               handleSubmit();
             }
           }}

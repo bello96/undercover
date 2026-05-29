@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { tx } from "@twind/core";
 
 export type ToastType = "error" | "info" | "success";
@@ -23,14 +23,21 @@ const TYPE_ICONS: Record<ToastType, string> = {
 };
 
 export default function Toast({ message, type = "info", onClose, duration = 3000 }: Props) {
+  // onClose 是父组件内联箭头，每次父级 render 换引用。若放进 timer 的 effect 依赖，
+  // 频繁重渲染会反复 clearTimeout+重设 → toast 永不消失。改用 ref 始终指向最新 onClose，
+  // timer 仅在挂载时设一次（新 toast 靠父级 key 强制 remount 重新计时）。
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    const t = setTimeout(onClose, duration);
+    onCloseRef.current = onClose;
+  });
+  useEffect(() => {
+    const t = setTimeout(() => onCloseRef.current(), duration);
     return () => clearTimeout(t);
-  }, [onClose, duration]);
+  }, [duration]);
 
   return (
     <div
-      onClick={onClose}
+      onClick={() => onCloseRef.current()}
       className={tx(
         "fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg border",
         "text-body-sm font-medium max-w-sm cursor-pointer",
