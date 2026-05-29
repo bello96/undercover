@@ -30,7 +30,9 @@ export default function Home({ onEnterRoom }: HomeProps) {
       const data = (await res.json()) as { roomCode: string };
       onEnterRoom(data.roomCode, trimmedName);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "建房失败，请重试");
+      // 我们主动抛的错误带中文状态码；fetch 网络层失败（TypeError "Failed to fetch"）兜底中文提示
+      const isOwnError = e instanceof Error && e.message.startsWith("建房失败");
+      setError(isOwnError ? (e as Error).message : "网络连接失败，请检查网络后重试");
     } finally {
       setCreating(false);
     }
