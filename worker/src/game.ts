@@ -1,8 +1,7 @@
 // worker/src/game.ts
 // 纯函数：无副作用，随机性通过参数注入，可单测。
 
-/** 卧底获胜或平民获胜的类型（Task 9 建 types.ts 后可改为 import，此处内联）。 */
-export type Winner = "civilian" | "undercover";
+import type { Winner } from "./types";
 
 /** 词对接口（parseWordPair / pickFallback 的返回值）。 */
 export interface WordPair {
