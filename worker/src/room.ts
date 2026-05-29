@@ -12,10 +12,11 @@ import {
   RATE_LIMIT_MAX_MSGS,
   RATE_LIMIT_WINDOW_MS,
   RECONNECT_GRACE_MS,
+  REVEAL_MS,
   TURN_MS,
   VOTE_MS,
 } from "./constants";
-import { computeSpeakingOrder, pickUndercover } from "./game";
+import { checkWin, computeSpeakingOrder, pickUndercover, tallyVotes } from "./game";
 import { getWordPair } from "./words";
 import type {
   ChatEntry,
@@ -24,6 +25,8 @@ import type {
   Env,
   GamePhase,
   PlayerAttachment,
+  Role,
+  Winner,
 } from "./types";
 
 interface PlayerInfoWire {
@@ -414,7 +417,12 @@ export class GameRoom implements DurableObject {
       case "describe":
         await this.onDescribe(ws, msg.text as string);
         break;
-      // vote/nextGame —— 后续单元追加
+      case "vote":
+        await this.onVote(ws, msg.targetId as string);
+        break;
+      case "nextGame":
+        await this.onNextGame(ws);
+        break;
     }
   }
 
@@ -480,8 +488,13 @@ export class GameRoom implements DurableObject {
         const speakerId = this.speakingOrder[this.currentSpeakerIndex];
         this.recordDescription(speakerId, "（未描述）");
         await this.saveState();
+      } else if (this.phase === "voting") {
+        // 投票超时：按已投的票计票（弃票忽略）
+        await this.tallyAndResolve();
+      } else if (this.phase === "reveal") {
+        // 公布停留到点：判胜负 → 结束 或 下一轮
+        await this.advanceAfterReveal();
       }
-      // TODO(单元8): voting / reveal 超时分支
     }
 
     // --- 4. Schedule next alarm if needed ---
@@ -786,6 +799,172 @@ export class GameRoom implements DurableObject {
     });
   }
 
+  // ============ Gameplay: vote / tally / reveal / endGame ============
+
+  /** 投票。仅 voting 阶段；投票者/目标须存活；不能投自己；加赛仅限候选人。 */
+  private async onVote(ws: WebSocket, targetId: string) {
+    const player = this.getPlayer(ws);
+    if (!player || this.phase !== "voting") {
+      return;
+    }
+    const alive = this.aliveIds();
+    if (!alive.includes(player.id)) {
+      return; // 出局者不能投
+    }
+    if (player.id === targetId) {
+      return; // 不能投自己
+    }
+    if (!alive.includes(targetId)) {
+      return; // 目标须存活
+    }
+    if (this.voteRound === 2 && !this.tiebreakCandidates.includes(targetId)) {
+      return; // 加赛仅候选人
+    }
+    this.votes[player.id] = targetId;
+    // 仅广播「谁投了」，绝不暴露票向
+    this.broadcast({ type: "voteUpdate", voterId: player.id });
+    // 全部存活者投完 → 立即计票
+    if (alive.every((id) => this.votes[id] !== undefined)) {
+      await this.tallyAndResolve();
+    } else {
+      await this.saveState();
+    }
+  }
+
+  /** 计票：唯一最高→出局；平票→加赛(一次)→仍平票则无人淘汰。 */
+  private async tallyAndResolve() {
+    const { counts, topIds } = tallyVotes(this.votes);
+    if (topIds.length === 1) {
+      await this.eliminateByVote(topIds[0], counts);
+      return;
+    }
+    if (topIds.length > 1 && this.voteRound === 1) {
+      // 加赛
+      this.voteRound = 2;
+      this.tiebreakCandidates = topIds;
+      this.votes = {};
+      this.phaseDeadline = Date.now() + VOTE_MS;
+      this.scheduleNextAlarm();
+      await this.saveState();
+      this.broadcast({
+        type: "voteResult",
+        tally: counts,
+        eliminatedId: null,
+        tiebreak: { candidates: topIds, round: 2 },
+      });
+      this.broadcast({
+        type: "phaseChange",
+        phase: "voting",
+        round: this.round,
+        deadline: this.phaseDeadline,
+        tiebreakCandidates: topIds,
+      });
+      return;
+    }
+    // 平票且已加赛，或无人投票 → 无人淘汰，直接进 reveal
+    await this.enterReveal(null, null, counts);
+  }
+
+  /** 投票出局：标记出局 + 进 reveal（带身份）。 */
+  private async eliminateByVote(targetId: string, counts: Record<string, number>) {
+    this.eliminatedIds.push(targetId);
+    const role: Role = targetId === this.undercoverId ? "undercover" : "civilian";
+    await this.enterReveal(targetId, role, counts);
+  }
+
+  /** 进入公布阶段：记账本轮出局者，广播 voteResult，设 REVEAL_MS alarm。 */
+  private async enterReveal(
+    eliminatedId: string | null,
+    role: Role | null,
+    counts: Record<string, number>,
+  ) {
+    this.phase = "reveal";
+    this.lastRevealEliminatedId = eliminatedId;
+    this.phaseDeadline = Date.now() + REVEAL_MS;
+    this.scheduleNextAlarm();
+    await this.saveState();
+    this.broadcast({
+      type: "voteResult",
+      tally: counts,
+      eliminatedId,
+      ...(role ? { eliminatedRole: role } : {}),
+    });
+    this.broadcast({ type: "phaseChange", phase: "reveal", round: this.round });
+  }
+
+  /** reveal 到点：判胜负 → 结束 或 下一轮描述。 */
+  private async advanceAfterReveal() {
+    const eid = this.lastRevealEliminatedId;
+    const role: Role | null = eid
+      ? eid === this.undercoverId
+        ? "undercover"
+        : "civilian"
+      : null;
+    const winner = checkWin(role, this.aliveIds().length);
+    if (winner) {
+      await this.endGame(winner);
+    } else {
+      this.round++;
+      this.descriptions = [];
+      this.startDescribingRound();
+      await this.saveState();
+      this.broadcast({
+        type: "phaseChange",
+        phase: "describing",
+        round: this.round,
+        currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
+        deadline: this.phaseDeadline,
+        speakingOrder: this.speakingOrder,
+      });
+    }
+  }
+
+  /** 结束游戏：揭晓所有身份 + 词。 */
+  private async endGame(winner: Winner) {
+    this.phase = "ended";
+    this.phaseDeadline = 0;
+    const roles: Record<string, Role> = {};
+    for (const id of this.joinOrder) {
+      roles[id] = id === this.undercoverId ? "undercover" : "civilian";
+    }
+    await this.saveState();
+    this.broadcast({
+      type: "gameOver",
+      winner,
+      undercoverId: this.undercoverId,
+      civilianWord: this.civilianWord,
+      undercoverWord: this.undercoverWord,
+      roles,
+    });
+  }
+
+  /** host 再来一局：回到大厅，清空所有玩法字段（保留玩家与聊天）。 */
+  private async onNextGame(ws: WebSocket) {
+    const player = this.getPlayer(ws);
+    if (!player || player.id !== this.hostId) {
+      return;
+    }
+    if (this.phase !== "ended") {
+      return;
+    }
+    this.phase = "lobby";
+    this.civilianWord = null;
+    this.undercoverWord = null;
+    this.undercoverId = null;
+    this.eliminatedIds = [];
+    this.round = 0;
+    this.speakingOrder = [];
+    this.currentSpeakerIndex = 0;
+    this.descriptions = [];
+    this.votes = {};
+    this.voteRound = 1;
+    this.tiebreakCandidates = [];
+    this.phaseDeadline = 0;
+    this.lastRevealEliminatedId = null;
+    await this.saveState();
+    this.broadcast({ type: "phaseChange", phase: "lobby", round: 0 });
+  }
+
   /** Intentional leave — immediate removal, no grace period */
   private async onLeave(ws: WebSocket) {
     const player = this.getPlayer(ws);
@@ -839,41 +1018,98 @@ export class GameRoom implements DurableObject {
 
   /** Called when a disconnected player's grace period expires without reconnecting */
   private async processActualLeave(dp: DisconnectedPlayer) {
-    // 从在场序列与出局列表移除
+    // wasAlive：移除前是否仍是「在场未出局」的参与者。
+    // 此刻该 ws 已无 attachment、且已从 disconnectedPlayers 移除，isPlayerActive 必为 false，
+    // 故不能用 aliveIds()（会恒为 false）；直接按 joinOrder 成员且未出局判定。
+    const wasAlive = this.joinOrder.includes(dp.id) && !this.eliminatedIds.includes(dp.id);
+    const wasHost = dp.id === this.hostId;
+
+    // 从在场序列与出局列表移除；并从投票中删除该人作为投票者或被投目标的条目
     this.joinOrder = this.joinOrder.filter((id) => id !== dp.id);
     this.eliminatedIds = this.eliminatedIds.filter((id) => id !== dp.id);
+    this.votes = Object.fromEntries(
+      Object.entries(this.votes).filter(([voter, target]) => voter !== dp.id && target !== dp.id),
+    );
 
     const remaining = this.getJoinedWebSockets();
     // Also consider other disconnected players still in grace period
     const otherDisconnected = Array.from(this.disconnectedPlayers.values());
     const allRemaining = [...remaining.map((r) => r.player), ...otherDisconnected];
 
-    if (allRemaining.length > 0) {
-      // Notify connected players about the leave
-      this.broadcast({
-        type: "playerLeft",
-        playerId: dp.id,
-      });
-
-      // host 迁移：离开者是 host 则交给最早仍在场者。
-      // 优先连接中的玩家，再退化到在房间内的（grace 期断线），最后兜底 remaining[0]。
-      if (dp.id === this.hostId) {
-        const connectedIds = new Set(
-          this.getJoinedWebSockets().map(({ player }) => player.id),
-        );
-        const newHost =
-          this.joinOrder.find((id) => connectedIds.has(id)) ??
-          this.joinOrder.find((id) => this.isPlayerActive(id)) ??
-          allRemaining[0].id;
-        this.hostId = newHost;
-      }
-
-      // TODO(单元8): 游戏中离开按出局 + 重算胜负
-
-      await this.saveState();
-    } else {
+    if (allRemaining.length === 0) {
       // Room is truly empty, reset everything (含所有玩法字段)
       this.resetRoom();
+      await this.saveState();
+      return;
+    }
+
+    // host 迁移：离开者是 host 则交给最早仍在场者。
+    // 优先连接中的玩家，再退化到在房间内的（grace 期断线），最后兜底 allRemaining[0]。
+    if (wasHost) {
+      const connectedIds = new Set(this.getJoinedWebSockets().map(({ player }) => player.id));
+      const newHost =
+        this.joinOrder.find((id) => connectedIds.has(id)) ??
+        this.joinOrder.find((id) => this.isPlayerActive(id)) ??
+        allRemaining[0].id;
+      this.hostId = newHost;
+    }
+
+    const inGame =
+      this.phase === "describing" || this.phase === "voting" || this.phase === "reveal";
+    if (inGame && wasAlive) {
+      // 游戏中在场玩家离开：按出局处理，公开身份 + 重算胜负
+      const role: Role = dp.id === this.undercoverId ? "undercover" : "civilian";
+      this.broadcast({ type: "playerLeft", playerId: dp.id, revealedRole: role });
+      const winner = checkWin(role, this.aliveIds().length);
+      if (winner) {
+        await this.endGame(winner);
+        return;
+      }
+      // 游戏继续：修复当前阶段（发言序 / 投票计票时机）
+      await this.fixupPhaseAfterRemoval(dp.id);
+    } else {
+      // 大厅，或离开的是已出局观战者：仅通知 + 持久化
+      this.broadcast({ type: "playerLeft", playerId: dp.id });
+      await this.saveState();
+    }
+  }
+
+  /** 离开者影响当前阶段时的修复：描述阶段重建发言序；投票阶段检查是否已可计票。 */
+  private async fixupPhaseAfterRemoval(removedId: string) {
+    if (this.phase === "describing") {
+      const curId = this.speakingOrder[this.currentSpeakerIndex];
+      const wasCurrent = curId === removedId;
+      // 从发言序移除离开者
+      this.speakingOrder = this.speakingOrder.filter((id) => id !== removedId);
+      if (this.currentSpeakerIndex >= this.speakingOrder.length) {
+        // 离开者在末尾或之后导致越界 → 本轮发言已结束，进投票
+        this.enterVoting();
+      } else if (wasCurrent) {
+        // 离开者正好是当前发言者：移除后 index 现指向原下一个，重置 deadline 并广播
+        this.phaseDeadline = Date.now() + TURN_MS;
+        this.scheduleNextAlarm();
+        this.broadcast({
+          type: "turnChange",
+          currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
+          deadline: this.phaseDeadline,
+        });
+        await this.saveState();
+      } else {
+        // 调整 index 使其仍指向原「当前发言者」
+        const idx = this.speakingOrder.indexOf(curId);
+        if (idx >= 0) {
+          this.currentSpeakerIndex = idx;
+        }
+        await this.saveState();
+      }
+    } else if (this.phase === "voting") {
+      const alive = this.aliveIds();
+      if (alive.length > 0 && alive.every((id) => this.votes[id] !== undefined)) {
+        await this.tallyAndResolve();
+      } else {
+        await this.saveState();
+      }
+    } else {
       await this.saveState();
     }
   }
