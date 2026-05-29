@@ -61,6 +61,7 @@ export class GameRoom implements DurableObject {
   private tiebreakCandidates: string[] = [];
   private phaseDeadline = 0; // describing/voting/reveal 的 alarm 截止
   private recentWordIndices: number[] = []; // 内置库近期去重（内存即可，不持久化）
+  // reveal 阶段当轮被投出者 ID（无人淘汰为 null），advanceAfterReveal 据此判 role；持久化以防休眠丢失
   private lastRevealEliminatedId: string | null = null;
 
   // Per-ws rolling window counter for rate limiting. WeakMap ensures the
@@ -241,6 +242,7 @@ export class GameRoom implements DurableObject {
     return this.getJoinedWebSockets().length;
   }
 
+  // "active" = 仍在房间内（含重连宽限期 disconnectedPlayers），非单纯连接状态
   private isPlayerActive(id: string): boolean {
     if (this.disconnectedPlayers.has(id)) {
       return true;
@@ -707,16 +709,17 @@ export class GameRoom implements DurableObject {
         playerId: dp.id,
       });
 
-      // host 迁移：离开者是 host 则交给最早仍在场者
+      // host 迁移：离开者是 host 则交给最早仍在场者。
+      // 优先连接中的玩家，再退化到在房间内的（grace 期断线），最后兜底 remaining[0]。
       if (dp.id === this.hostId) {
-        let newHost: string | null = null;
-        for (const id of this.joinOrder) {
-          if (this.isPlayerActive(id)) {
-            newHost = id;
-            break;
-          }
-        }
-        this.hostId = newHost ?? allRemaining[0].id;
+        const connectedIds = new Set(
+          this.getJoinedWebSockets().map(({ player }) => player.id),
+        );
+        const newHost =
+          this.joinOrder.find((id) => connectedIds.has(id)) ??
+          this.joinOrder.find((id) => this.isPlayerActive(id)) ??
+          allRemaining[0].id;
+        this.hostId = newHost;
       }
 
       // TODO(单元8): 游戏中离开按出局 + 重算胜负
