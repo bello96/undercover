@@ -181,7 +181,7 @@ export default function Home({ onEnterRoom }: HomeProps) {
               加入
             </button>
           </div>
-          {nameEmpty && nickname.length === 0 && (
+          {nickname.length === 0 && (
             <p className={tx("mt-2 text-caption text-ink-subtle")}>请先填写昵称再进房</p>
           )}
         </div>
