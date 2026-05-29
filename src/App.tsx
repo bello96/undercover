@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { tx } from "@twind/core";
 import Home from "./pages/Home";
+import Room from "./pages/Room";
 
 const NICKNAME_KEY = "undercover-nickname";
 const PLAYER_ID_KEY = "undercover-playerId";
@@ -52,31 +53,15 @@ export default function App() {
     window.history.replaceState(null, "", "/");
   }, []);
 
-  // In room — next unit (Task 10) will replace this placeholder with <Room />
+  // In room
   if (roomCode) {
     return (
-      <div className={tx("min-h-screen bg-canvas text-ink flex items-center justify-center p-8")}>
-        <div
-          className={tx(
-            "bg-surface-1 border border-hairline rounded-lg p-8 text-center max-w-sm w-full",
-          )}
-        >
-          <p className={tx("text-ink-muted text-body-sm mb-1")}>房间号</p>
-          <p className={tx("text-display-md font-display font-semibold text-ink mb-6 tracking-widest")}>
-            {roomCode}
-          </p>
-          <p className={tx("text-ink-subtle text-body-sm mb-6")}>游戏界面建设中</p>
-          <button
-            onClick={leaveRoom}
-            className={tx(
-              "px-4 py-2 bg-surface-2 text-ink text-button font-medium rounded-md",
-              "border border-hairline hover:border-hairline-strong transition-colors",
-            )}
-          >
-            离开房间
-          </button>
-        </div>
-      </div>
+      <Room
+        roomCode={roomCode}
+        playerName={playerName}
+        playerId={playerId}
+        onLeave={leaveRoom}
+      />
     );
   }
 
