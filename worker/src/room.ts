@@ -1083,7 +1083,10 @@ export class GameRoom implements DurableObject {
       this.speakingOrder = this.speakingOrder.filter((id) => id !== removedId);
       if (this.currentSpeakerIndex >= this.speakingOrder.length) {
         // 离开者在末尾或之后导致越界 → 本轮发言已结束，进投票
+        // enterVoting 自身只 setAlarm/broadcast 不落盘，此处须显式 saveState，
+        // 否则 phase=voting/清票/joinOrder 删除仅在内存，休眠后会重载陈旧 describing 态
         this.enterVoting();
+        await this.saveState();
       } else if (wasCurrent) {
         // 离开者正好是当前发言者：移除后 index 现指向原下一个，重置 deadline 并广播
         this.phaseDeadline = Date.now() + TURN_MS;
