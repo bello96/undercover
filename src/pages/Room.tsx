@@ -194,8 +194,8 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
           deadline: msg.deadline ?? prev.deadline,
           speakingOrder: msg.speakingOrder ?? prev.speakingOrder,
           tiebreakCandidates: msg.tiebreakCandidates ?? [],
-          // 离开 reveal 进入新阶段时清掉上轮出局数据，避免残留
-          voteResult: null,
+          // 进入 reveal 时保留 voteResult（揭晓需要它）；离开 reveal 才清除
+          voteResult: msg.phase === "reveal" ? prev.voteResult : null,
         }));
         break;
       }
@@ -239,6 +239,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
             eliminatedRole: msg.eliminatedRole,
             tiebreak: msg.tiebreak,
           },
+          // 有出局者时本地立即标记出局，不等待 roomState 重发 players
+          players: msg.eliminatedId
+            ? prev.players.map((p) =>
+                p.id === msg.eliminatedId ? { ...p, alive: false } : p,
+              )
+            : prev.players,
         }));
         break;
       }
