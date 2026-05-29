@@ -1,6 +1,7 @@
 # 🕵️ 谁是卧底 · 在线多人实时推理游戏
 
 **线上地址**：[https://undercover.dengjiabei.cn](https://undercover.dengjiabei.cn)
+**仓库**：[github.com/bello96/undercover](https://github.com/bello96/undercover)
 
 3-6 人参与，其中 1 名卧底混入平民之中——通过描述、倾听和投票，找出那个说着不同词的人。
 
@@ -15,7 +16,7 @@
 5. 所有玩家轮流用一句话描述自己的词（不能直说词本身）
 6. 描述结束后，所有人投票选出最可疑的玩家
 7. 得票最多者出局，揭晓其身份
-8. 重复描述→投票，直至卧底出局（平民胜）或卧底人数 ≥ 平民人数（卧底胜）
+8. 重复描述→投票，直至卧底被投出（平民胜）或场上只剩 2 人时卧底仍存活（卧底胜）
 
 ---
 
@@ -59,7 +60,8 @@ VITE_API_BASE=http://localhost:8787
 cd worker && npx wrangler dev
 ```
 
-> 本地 Worker 不含 DeepSeek API Key，发词会自动降级到内置词库。
+> 本地 Worker 默认不含 DeepSeek API Key，发词会自动降级到内置词库。
+> 如需本地用真 DeepSeek 调试，在 `worker/.dev.vars` 写 `DEEPSEEK_API_KEY=你的key`（该文件已被 gitignore）。
 
 ### 运行 Worker 单元测试
 
