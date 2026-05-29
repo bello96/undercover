@@ -66,6 +66,9 @@ describe("parseWordPair", () => {
     expect(parseWordPair('{"civilianWord":"猫"}')).toBeNull();
     expect(parseWordPair('{"civilianWord":"","undercoverWord":"狗"}')).toBeNull();
   });
+  it("超长词（>12字符）→ null", () => {
+    expect(parseWordPair('{"civilianWord":"这是一个超过十二个字符的超长词","undercoverWord":"狗"}')).toBeNull();
+  });
 });
 
 describe("pickFallback", () => {
