@@ -12,27 +12,20 @@ function getRoomCodeFromUrl(): string {
   return match ? match[1] : "";
 }
 
+/** 默认昵称「玩家1234」，供深链接入房预填。 */
+function defaultNickname(): string {
+  return `玩家${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
 export default function App() {
   const [roomCode, setRoomCode] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [playerId, setPlayerId] = useState<string | undefined>(undefined);
 
-  // Check URL on mount for room code (refresh/direct URL access)
-  useEffect(() => {
-    const code = getRoomCodeFromUrl();
-    if (!code) {
-      return;
-    }
-
-    const savedName = sessionStorage.getItem(NICKNAME_KEY);
-    const savedPlayerId = sessionStorage.getItem(PLAYER_ID_KEY) ?? undefined;
-
-    // Reconnection (page refresh) — go directly, server validates on WS join
-    if (savedName && savedPlayerId) {
-      enterRoom(code, savedName, savedPlayerId);
-    }
-    // If no saved session, just stay on Home — user can enter nickname and join
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 深链接入房：访问 /房间号 时弹昵称框直接进，无需回首页重输房号
+  const [urlJoinCode, setUrlJoinCode] = useState("");
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [modalName, setModalName] = useState("");
 
   const enterRoom = useCallback((code: string, name: string, existingPlayerId?: string) => {
     setPlayerName(name);
@@ -44,12 +37,48 @@ export default function App() {
     window.history.replaceState(null, "", `/${code}`);
   }, []);
 
+  // Check URL on mount for room code (refresh/direct URL access)
+  useEffect(() => {
+    const code = getRoomCodeFromUrl();
+    if (!code) {
+      return;
+    }
+
+    const savedName = sessionStorage.getItem(NICKNAME_KEY);
+    const savedPlayerId = sessionStorage.getItem(PLAYER_ID_KEY) ?? undefined;
+
+    // 重连（刷新页面）—— 直接进，服务端在 WS join 校验
+    if (savedName && savedPlayerId) {
+      enterRoom(code, savedName, savedPlayerId);
+      return;
+    }
+    // 新访客点开房间链接 —— 弹昵称框（预填默认昵称），确认即进房
+    setUrlJoinCode(code);
+    setModalName(defaultNickname());
+    setShowNicknameModal(true);
+  }, [enterRoom]);
+
   const leaveRoom = useCallback(() => {
     setRoomCode("");
     setPlayerName("");
     setPlayerId(undefined);
     sessionStorage.removeItem(NICKNAME_KEY);
     sessionStorage.removeItem(PLAYER_ID_KEY);
+    window.history.replaceState(null, "", "/");
+  }, []);
+
+  const handleNicknameConfirm = useCallback(() => {
+    const name = modalName.trim();
+    if (!name) {
+      return;
+    }
+    setShowNicknameModal(false);
+    enterRoom(urlJoinCode, name);
+  }, [modalName, urlJoinCode, enterRoom]);
+
+  const handleNicknameCancel = useCallback(() => {
+    setShowNicknameModal(false);
+    setUrlJoinCode("");
     window.history.replaceState(null, "", "/");
   }, []);
 
@@ -62,6 +91,62 @@ export default function App() {
         playerId={playerId}
         onLeave={leaveRoom}
       />
+    );
+  }
+
+  // 深链接入房昵称框（覆盖首页）
+  if (showNicknameModal) {
+    return (
+      <div className={tx("min-h-screen bg-canvas flex items-center justify-center px-4")}>
+        <div
+          className={tx(
+            "w-full max-w-sm bg-surface-1 border border-hairline rounded-xl p-6 flex flex-col gap-4",
+          )}
+        >
+          <div className={tx("flex flex-col gap-1")}>
+            <h2 className={tx("text-card-title font-display font-semibold text-ink")}>
+              加入房间 <span className={tx("font-mono text-primary")}>{urlJoinCode}</span>
+            </h2>
+            <p className={tx("text-body-sm text-ink-muted")}>输入你的昵称即可进入房间</p>
+          </div>
+          <input
+            type="text"
+            value={modalName}
+            onChange={(e) => setModalName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                handleNicknameConfirm();
+              }
+            }}
+            placeholder="输入昵称（最多10字）"
+            maxLength={10}
+            autoFocus
+            className={tx(
+              "w-full bg-surface-2 text-ink text-body rounded-md px-3 py-2",
+              "border border-hairline outline-none focus:border-primary transition-colors",
+              "placeholder:text-ink-tertiary",
+            )}
+          />
+          <button
+            onClick={handleNicknameConfirm}
+            disabled={!modalName.trim()}
+            className={tx(
+              "w-full py-2.5 px-4 text-button font-medium rounded-md transition-colors",
+              modalName.trim()
+                ? "bg-primary text-on-primary hover:bg-primary-hover"
+                : "bg-surface-2 text-ink-tertiary border border-hairline cursor-not-allowed",
+            )}
+          >
+            进入房间
+          </button>
+          <button
+            onClick={handleNicknameCancel}
+            className={tx("text-caption text-ink-subtle hover:text-ink-muted transition-colors")}
+          >
+            返回首页
+          </button>
+        </div>
+      </div>
     );
   }
 

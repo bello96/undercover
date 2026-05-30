@@ -1,6 +1,6 @@
 // 前后端共享消息契约。worker 端 types/room 手动镜像字段（不跨包 import）。
 // 与 worker/src/constants.ts 的 PROTOCOL_VERSION 双写一致。
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export type GamePhase = "lobby" | "describing" | "voting" | "reveal" | "ended";
 export type Role = "civilian" | "undercover";
@@ -11,6 +11,7 @@ export interface PlayerInfo {
   name: string;
   isHost: boolean;
   alive: boolean; // 是否在场未出局（出局者留房观战）
+  ready: boolean; // 大厅是否已准备（房主恒为 false，房主不参与准备）
 }
 
 export interface DescribeEntry {
@@ -33,10 +34,11 @@ export interface C_Describe { type: "describe"; text: string; }
 export interface C_Vote { type: "vote"; targetId: string; }
 export interface C_Chat { type: "chat"; text: string; }
 export interface C_NextGame { type: "nextGame"; }
+export interface C_Ready { type: "ready"; ready: boolean; } // 大厅准备/取消准备
 export interface C_Leave { type: "leave"; }
 export interface C_Ping { type: "ping"; }
 export type ClientMessage =
-  | C_Join | C_StartGame | C_Describe | C_Vote | C_Chat | C_NextGame | C_Leave | C_Ping;
+  | C_Join | C_StartGame | C_Describe | C_Vote | C_Chat | C_NextGame | C_Ready | C_Leave | C_Ping;
 
 // ---------- Server → Client ----------
 export interface S_RoomState {
@@ -57,6 +59,7 @@ export interface S_RoomState {
 }
 export interface S_PlayerJoined { type: "playerJoined"; player: PlayerInfo; }
 export interface S_PlayerLeft { type: "playerLeft"; playerId: string; revealedRole?: Role; }
+export interface S_ReadyUpdate { type: "readyUpdate"; playerId: string; ready: boolean; }
 export interface S_GameStarted {
   type: "gameStarted";
   yourWord: string;           // 逐 ws 个性化
@@ -92,6 +95,6 @@ export interface S_Error { type: "error"; message: string; }
 export interface S_RoomClosed { type: "roomClosed"; reason: string; }
 export interface S_Pong { type: "pong"; }
 export type ServerMessage =
-  | S_RoomState | S_PlayerJoined | S_PlayerLeft | S_GameStarted | S_PhaseChange
+  | S_RoomState | S_PlayerJoined | S_PlayerLeft | S_ReadyUpdate | S_GameStarted | S_PhaseChange
   | S_DescribeUpdate | S_VoteUpdate | S_VoteResult | S_GameOver
   | S_Chat | S_Error | S_RoomClosed | S_Pong;

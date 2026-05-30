@@ -27,4 +27,4 @@ export const RATE_LIMIT_WINDOW_MS = 1000;
 export const RATE_LIMIT_MAX_MSGS = 100;
 
 // 协议版本（与 src/types/protocol.ts 双写一致；breaking 才 bump）
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;

@@ -7,13 +7,21 @@ import GameSidebar from "../components/GameSidebar";
 import PlayerCircle from "../components/PlayerCircle";
 import PhaseStepper from "../components/PhaseStepper";
 import RulesModal from "../components/RulesModal";
-import FeedPanel, { type FeedItem } from "../components/FeedPanel";
+import ChatPanel from "../components/ChatPanel";
 import WordRevealOverlay from "../components/WordRevealOverlay";
 import RevealOverlay from "../components/RevealOverlay";
 import GameOver from "../components/GameOver";
 import Toast from "../components/Toast";
 import { PLAYER_ID_KEY } from "../App";
-import type { GamePhase, PlayerInfo, ServerMessage, Role, Winner } from "../types/protocol";
+import type {
+  GamePhase,
+  PlayerInfo,
+  DescribeEntry,
+  ChatEntry,
+  ServerMessage,
+  Role,
+  Winner,
+} from "../types/protocol";
 
 // 与服务端 constants.MIN_PLAYERS 保持一致（顶栏「N-M 人局」展示用）
 const MIN_PLAYERS = 3;
@@ -50,7 +58,8 @@ interface RoomView {
   players: PlayerInfo[];
   round: number;
   deadline: number | undefined;
-  feed: FeedItem[]; // 描述（发言）+ 聊天合并的信息流
+  descriptions: DescribeEntry[]; // 当前轮描述（显示在各玩家头像下方）
+  chatMessages: ChatEntry[]; // 右侧聊天（仅聊天，不含描述）
   votedPlayerIds: string[];
   tiebreakCandidates: string[];
   yourWord: string | undefined;
@@ -67,16 +76,14 @@ const INITIAL_ROOM_VIEW: RoomView = {
   players: [],
   round: 0,
   deadline: undefined,
-  feed: [],
+  descriptions: [],
+  chatMessages: [],
   votedPlayerIds: [],
   tiebreakCandidates: [],
   yourWord: undefined,
   voteResult: null,
   gameOver: null,
 };
-
-const nameOf = (players: PlayerInfo[], id: string): string =>
-  players.find((p) => p.id === id)?.name ?? "玩家";
 
 export default function Room({ roomCode, playerName, playerId, onLeave }: Props) {
   const [view, setView] = useState<RoomView>(INITIAL_ROOM_VIEW);
@@ -114,33 +121,17 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       case "roomState": {
         // 关键：写入 sessionStorage 以便刷新后重连
         sessionStorage.setItem(PLAYER_ID_KEY, msg.yourId);
-        const players = msg.players;
-        const descItems: FeedItem[] = (msg.descriptions ?? []).map((d) => ({
-          id: `d-${d.round}-${d.playerId}`,
-          kind: "describe",
-          playerId: d.playerId,
-          playerName: nameOf(players, d.playerId),
-          text: d.text,
-          round: d.round,
-        }));
-        const chatItems: FeedItem[] = (msg.chatHistory ?? []).map((c, i) => ({
-          id: `c-${c.timestamp}-${i}`,
-          kind: "chat",
-          playerId: c.playerId,
-          playerName: c.playerName,
-          text: c.text,
-        }));
         setView({
           roomCode: msg.roomCode,
           hostId: msg.hostId,
           phase: msg.phase,
           maxPlayers: msg.maxPlayers,
           myId: msg.yourId,
-          players,
+          players: msg.players,
           round: msg.round,
           deadline: msg.deadline,
-          // 重连最佳努力顺序：历史聊天在前、本轮描述在后（无逐条时间戳，跨轮顺序略有损）
-          feed: [...chatItems, ...descItems],
+          descriptions: msg.descriptions ?? [],
+          chatMessages: msg.chatHistory ?? [],
           votedPlayerIds: msg.votedPlayerIds ?? [],
           tiebreakCandidates: msg.tiebreakCandidates ?? [],
           yourWord: msg.yourWord,
@@ -179,8 +170,18 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
         break;
       }
 
+      case "readyUpdate": {
+        setView((prev) => ({
+          ...prev,
+          players: prev.players.map((p) =>
+            p.id === msg.playerId ? { ...p, ready: msg.ready } : p,
+          ),
+        }));
+        break;
+      }
+
       case "gameStarted": {
-        // 开局：弹「你的词语」浮层 + 进入首轮描述 + 清空信息流（新对局）
+        // 开局：弹「你的词语」浮层 + 进入首轮描述 + 清空本轮描述
         setShowWordReveal(true);
         setView((prev) => ({
           ...prev,
@@ -190,7 +191,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
           round: msg.round,
           voteResult: null,
           gameOver: null,
-          feed: [],
+          descriptions: [],
           votedPlayerIds: [],
           tiebreakCandidates: [],
         }));
@@ -209,7 +210,8 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
             tiebreakCandidates: msg.tiebreakCandidates ?? [],
             // 进入 reveal 时保留 voteResult（揭晓需要它）；其余阶段清除
             voteResult: msg.phase === "reveal" ? prev.voteResult : null,
-            // 进入描述/投票（含加赛重投）清空已投票；信息流跨轮累积不清空
+            // 新一轮描述清空上轮描述；进入描述/投票（含加赛重投）清空已投票
+            descriptions: enteringDescribing ? [] : prev.descriptions,
             votedPlayerIds: enteringDescribing || enteringVoting ? [] : prev.votedPlayerIds,
           };
         });
@@ -217,21 +219,20 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       }
 
       case "describeUpdate": {
-        // 同时作答：任意存活者提交即广播，汇入信息流；去重（重连后 roomState 已含本轮）
+        // 同时作答：任意存活者提交即广播；去重后追加（重连后 roomState 已含本轮）
         setView((prev) => {
-          const dupId = `d-${msg.round}-${msg.playerId}`;
-          if (prev.feed.some((it) => it.id === dupId)) {
+          if (
+            prev.descriptions.some((d) => d.playerId === msg.playerId && d.round === msg.round)
+          ) {
             return prev;
           }
-          const item: FeedItem = {
-            id: dupId,
-            kind: "describe",
-            playerId: msg.playerId,
-            playerName: nameOf(prev.players, msg.playerId),
-            text: msg.text,
-            round: msg.round,
+          return {
+            ...prev,
+            descriptions: [
+              ...prev.descriptions,
+              { playerId: msg.playerId, text: msg.text, round: msg.round },
+            ],
           };
-          return { ...prev, feed: [...prev.feed, item] };
         });
         break;
       }
@@ -281,16 +282,18 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       }
 
       case "chat": {
-        setView((prev) => {
-          const item: FeedItem = {
-            id: `c-${msg.timestamp}-${prev.feed.length}`,
-            kind: "chat",
-            playerId: msg.playerId,
-            playerName: msg.playerName,
-            text: msg.text,
-          };
-          return { ...prev, feed: [...prev.feed, item] };
-        });
+        setView((prev) => ({
+          ...prev,
+          chatMessages: [
+            ...prev.chatMessages,
+            {
+              playerId: msg.playerId,
+              playerName: msg.playerName,
+              text: msg.text,
+              timestamp: msg.timestamp,
+            },
+          ],
+        }));
         break;
       }
 
@@ -298,7 +301,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
         // 「游戏已开始，无法加入」是会话级致命错误：服务端随即关闭连接，
         // 且重连仍会被拒。无论是否已加入都走 joinError 统一退出，避免卡在
         // 「网络异常，正在重连…」假象里反复弹窗。其余错误：未加入走 joinError
-        // 统一退出，已加入仅弹 toast（如「至少需要 3 人才能开始」）。
+        // 统一退出，已加入仅弹 toast（如「还有玩家未准备」）。
         if (msg.message === "游戏已开始，无法加入" || !view.myId) {
           setJoinError(msg.message);
         } else {
@@ -390,7 +393,8 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
     maxPlayers,
     myId,
     yourWord,
-    feed,
+    descriptions,
+    chatMessages,
     votedPlayerIds,
     round,
     tiebreakCandidates,
@@ -401,11 +405,6 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
   const meInfo = players.find((p) => p.id === myId);
   const iAmEliminated = meInfo ? !meInfo.alive : false;
   const inGame = phase === "describing" || phase === "voting" || phase === "reveal";
-
-  // 当前轮已提交描述者（头像状态用）—— 从信息流按轮次推导
-  const submittedIds = feed
-    .filter((it) => it.kind === "describe" && it.round === round)
-    .map((it) => it.playerId);
 
   const reconnectBanner = !connected && (
     <div
@@ -439,7 +438,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
     );
   }
 
-  // 游戏中 / 结算：顶栏 + 三栏（左信息 / 中环形+进度条 / 右聊天流），覆盖层叠加
+  // 游戏中 / 结算：顶栏 + 三栏（左信息 / 中环形+进度条 / 右聊天），覆盖层叠加
   return (
     <div className={tx("h-screen bg-canvas text-ink flex flex-col overflow-hidden")}>
       {reconnectBanner}
@@ -483,7 +482,8 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
                 myId={myId}
                 hostId={hostId}
                 phase={phase}
-                submittedIds={submittedIds}
+                descriptions={descriptions}
+                round={round}
                 votedPlayerIds={votedPlayerIds}
                 tiebreakCandidates={tiebreakCandidates}
                 voteResult={voteResult}
@@ -493,10 +493,10 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
               <PhaseStepper phase={phase} />
             </div>
 
-            {/* 右：聊天 / 发言流 */}
+            {/* 右：聊天（仅聊天信息） */}
             <div className={tx("w-[336px] shrink-0 min-h-0")}>
-              <FeedPanel
-                items={feed}
+              <ChatPanel
+                messages={chatMessages}
                 players={players}
                 myId={myId}
                 onSend={(text) => send({ type: "chat", text })}

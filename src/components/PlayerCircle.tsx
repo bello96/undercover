@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { tx } from "@twind/core";
-import type { GamePhase, PlayerInfo, Role } from "../types/protocol";
+import type { DescribeEntry, GamePhase, PlayerInfo, Role } from "../types/protocol";
 
 // 与服务端 constants.MAX_DESCRIBE_LENGTH 保持一致
 const MAX_DESCRIBE_LENGTH = 50;
@@ -8,6 +8,14 @@ const GOLD = "#e3b341";
 const PRIMARY = "#5e6ad2";
 const HAIRLINE = "#23252a";
 const HAIRLINE_STRONG = "#34343a";
+
+// 描述气泡裁剪到 2 行（twind 不一定支持 line-clamp，用内联样式兜底）
+const CLAMP_2: React.CSSProperties = {
+  display: "-webkit-box",
+  WebkitLineClamp: 2,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+};
 
 interface VoteResultSnapshot {
   tally: Record<string, number>;
@@ -20,7 +28,8 @@ interface Props {
   myId: string;
   hostId: string;
   phase: GamePhase;
-  submittedIds: string[];
+  descriptions: DescribeEntry[];
+  round: number;
   votedPlayerIds: string[];
   tiebreakCandidates: string[];
   voteResult: VoteResultSnapshot | null;
@@ -30,8 +39,8 @@ interface Props {
 
 /**
  * 中央环形玩家布局（会玩同款）：
- * - 头像沿圆周均匀排布，房主带皇冠+金环，本人蓝环；只显示状态（描述中/已描述/已投票…），描述文本走右侧信息流。
- * - 中央随阶段切换：描述输入 / 投票提示 / 公示。
+ * - 头像沿圆周均匀排布（房主皇冠+金环、本人蓝环）；每人描述显示在其头像下方。
+ * - 中央描述输入区用边框盒子框起，与四周头像视觉隔开。
  * - voting：点击他人头像投票（存活、非自己、合法目标）。
  */
 export default function PlayerCircle({
@@ -39,7 +48,8 @@ export default function PlayerCircle({
   myId,
   hostId,
   phase,
-  submittedIds,
+  descriptions,
+  round,
   votedPlayerIds,
   tiebreakCandidates,
   voteResult,
@@ -48,17 +58,19 @@ export default function PlayerCircle({
 }: Props) {
   const [draft, setDraft] = useState("");
 
+  const roundDescriptions = descriptions.filter((d) => d.round === round);
+  const descByPlayer = new Map(roundDescriptions.map((d) => [d.playerId, d.text]));
+
   const me = players.find((p) => p.id === myId);
   const iAmAlive = me?.alive ?? false;
   const aliveCount = players.filter((p) => p.alive).length;
-  const submittedSet = new Set(submittedIds);
   const votedSet = new Set(votedPlayerIds);
   const tiebreakSet = new Set(tiebreakCandidates);
-  const iHaveSubmitted = submittedSet.has(myId);
+  const iHaveSubmitted = descByPlayer.has(myId);
   const iHaveVoted = votedSet.has(myId);
   const isTiebreak = tiebreakCandidates.length > 0;
 
-  const submittedAlive = players.filter((p) => p.alive && submittedSet.has(p.id)).length;
+  const submittedAlive = players.filter((p) => p.alive && descByPlayer.has(p.id)).length;
   const votedAlive = players.filter((p) => p.alive && votedSet.has(p.id)).length;
 
   const canVoteTarget = (t: PlayerInfo): boolean => {
@@ -85,7 +97,7 @@ export default function PlayerCircle({
 
   return (
     <div className={tx("flex-1 flex items-center justify-center min-h-0 w-full")}>
-      <div className={tx("relative w-full max-w-[540px]")} style={{ aspectRatio: "1 / 1" }}>
+      <div className={tx("relative w-full max-w-[560px]")} style={{ aspectRatio: "1 / 1" }}>
         {/* 玩家头像环 */}
         {players.map((p, i) => {
           const angle = (-90 + (360 / n) * i) * (Math.PI / 180);
@@ -98,7 +110,7 @@ export default function PlayerCircle({
           const seat = i + 1;
           const clickable = canVoteTarget(p);
           const voted = votedSet.has(p.id);
-          const submitted = submittedSet.has(p.id);
+          const text = descByPlayer.get(p.id);
           const isEliminatedReveal = phase === "reveal" && voteResult?.eliminatedId === p.id;
           const revealUndercover = isEliminatedReveal && voteResult?.eliminatedRole === "undercover";
           const tally = phase === "reveal" ? voteResult?.tally[p.id] : undefined;
@@ -113,7 +125,7 @@ export default function PlayerCircle({
               ? { text: "卧底", cls: "text-semantic-error" }
               : { text: "平民", cls: "text-ink-muted" };
           } else if (phase === "describing") {
-            status = submitted
+            status = descByPlayer.has(p.id)
               ? { text: "已描述", cls: "text-semantic-success" }
               : { text: "描述中", cls: "text-primary" };
           } else if (phase === "voting") {
@@ -132,19 +144,22 @@ export default function PlayerCircle({
             ring = `0 0 0 2px ${HAIRLINE_STRONG}`;
           }
 
+          // 描述气泡：本轮已描述→显示文本；描述阶段存活未提交→「正在描述…」
+          const showDescribing = phase === "describing" && p.alive && !descByPlayer.has(p.id);
+
           return (
             <div
               key={p.id}
               className={tx(
-                "absolute flex flex-col items-center gap-1 w-[88px] -translate-x-1/2 -translate-y-1/2",
+                "absolute flex flex-col items-center gap-1 w-[104px] -translate-x-1/2 -translate-y-1/2",
               )}
               style={{ left: `${left}%`, top: `${top}%` }}
             >
               <div
                 onClick={clickable ? () => onVote(p.id) : undefined}
                 className={tx(
-                  "relative w-14 h-14 rounded-full flex items-center justify-center transition-all",
-                  "text-subhead font-display font-semibold",
+                  "relative w-11 h-11 rounded-full flex items-center justify-center transition-all",
+                  "text-body font-display font-semibold",
                   !p.alive && "opacity-40",
                   revealUndercover ? "bg-semantic-error text-on-primary" : "bg-surface-3 text-ink-muted",
                   clickable && "cursor-pointer hover:scale-105",
@@ -153,116 +168,128 @@ export default function PlayerCircle({
               >
                 {p.name.slice(0, 1).toUpperCase()}
                 {isHost && (
-                  <span className={tx("absolute -top-3.5 left-1/2 -translate-x-1/2 text-caption")}>
-                    👑
-                  </span>
+                  <span className={tx("absolute -top-3 left-1/2 -translate-x-1/2 text-caption")}>👑</span>
                 )}
                 <span
                   className={tx(
-                    "absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-1 border border-hairline-strong",
-                    "flex items-center justify-center text-[10px] text-ink-subtle",
+                    "absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-surface-1 border border-hairline-strong",
+                    "flex items-center justify-center text-[9px] text-ink-subtle",
                   )}
                 >
                   {seat}
                 </span>
               </div>
-              <span className={tx("text-caption text-ink-muted max-w-[88px] truncate text-center")}>
-                {seat}号 {p.name}
-              </span>
-              <div className={tx("flex items-center gap-1")}>
-                {status && (
-                  <span className={tx("text-[11px] font-medium", status.cls)}>{status.text}</span>
-                )}
-                {typeof tally === "number" && tally > 0 && (
-                  <span className={tx("text-[11px] text-ink-subtle")}>· {tally}票</span>
-                )}
-                {isMe && (
-                  <span
-                    className={tx(
-                      "text-[10px] text-ink-subtle bg-surface-3 border border-hairline rounded px-1",
-                    )}
-                  >
-                    我
-                  </span>
-                )}
+
+              {/* 名字 + 状态 */}
+              <div className={tx("flex flex-col items-center gap-0.5 w-full")}>
+                <span className={tx("text-caption text-ink-muted max-w-full truncate")}>
+                  {seat}号 {p.name}
+                </span>
+                <div className={tx("flex items-center gap-1")}>
+                  {status && (
+                    <span className={tx("text-[11px] font-medium", status.cls)}>{status.text}</span>
+                  )}
+                  {typeof tally === "number" && tally > 0 && (
+                    <span className={tx("text-[11px] text-ink-subtle")}>· {tally}票</span>
+                  )}
+                  {isMe && (
+                    <span className={tx("text-[10px] text-ink-subtle bg-surface-3 border border-hairline rounded px-1")}>
+                      我
+                    </span>
+                  )}
+                </div>
               </div>
+
+              {/* 描述气泡（显示在头像下方） */}
+              {text ? (
+                <div
+                  className={tx(
+                    "w-full text-[11px] leading-snug rounded-md px-2 py-1 break-words text-center",
+                    "bg-surface-2 border border-hairline text-ink",
+                  )}
+                  style={CLAMP_2}
+                  title={text}
+                >
+                  {text}
+                </div>
+              ) : showDescribing ? (
+                <span className={tx("text-[11px] text-ink-tertiary italic")}>正在描述…</span>
+              ) : null}
             </div>
           );
         })}
 
-        {/* 中央：描述输入 / 投票提示 / 公示 */}
+        {/* 中央：描述输入 / 投票提示 / 公示（用边框盒子与四周隔开） */}
         <div
           className={tx(
-            "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
-            "w-[58%] max-w-[300px] flex flex-col items-center gap-2 text-center",
+            "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[56%] max-w-[280px]",
           )}
         >
-          {phase === "describing" &&
-            (iAmAlive ? (
-              iHaveSubmitted ? (
-                <div className={tx("flex flex-col items-center gap-1")}>
-                  <span className={tx("text-body-sm text-semantic-success font-medium")}>
-                    ✅ 已提交描述
-                  </span>
-                  <span className={tx("text-caption text-ink-subtle")}>
-                    等待其他人作答…（{submittedAlive}/{aliveCount}）
-                  </span>
-                </div>
-              ) : (
-                <>
-                  <span className={tx("text-body font-medium text-ink")}>用一句话描述你的词</span>
-                  <span className={tx("text-caption text-ink-subtle")}>（不能直接说出词语本身）</span>
-                  <div className={tx("w-full relative mt-1")}>
-                    <input
-                      type="text"
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                          handleSubmitDraft();
-                        }
-                      }}
-                      maxLength={MAX_DESCRIBE_LENGTH}
-                      placeholder="请输入描述…"
-                      autoFocus
+          <div
+            className={tx(
+              "bg-surface-1 border border-hairline rounded-xl shadow-card",
+              "px-5 py-4 flex flex-col items-center gap-2 text-center",
+            )}
+          >
+            {phase === "describing" &&
+              (iAmAlive ? (
+                iHaveSubmitted ? (
+                  <>
+                    <span className={tx("text-body-sm text-semantic-success font-medium")}>
+                      ✅ 已提交描述
+                    </span>
+                    <span className={tx("text-caption text-ink-subtle")}>
+                      等待其他人作答…（{submittedAlive}/{aliveCount}）
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className={tx("text-body font-medium text-ink")}>用一句话描述你的词</span>
+                    <span className={tx("text-caption text-ink-subtle")}>（不能直接说出词语本身）</span>
+                    <div className={tx("w-full relative mt-1")}>
+                      <input
+                        type="text"
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                            handleSubmitDraft();
+                          }
+                        }}
+                        maxLength={MAX_DESCRIBE_LENGTH}
+                        placeholder="请输入描述…"
+                        autoFocus
+                        className={tx(
+                          "w-full px-3 py-2.5 pr-12 rounded-lg text-body-sm bg-surface-2 border border-hairline",
+                          "text-ink placeholder:text-ink-tertiary focus:outline-none focus:border-primary transition-colors",
+                        )}
+                      />
+                      <span className={tx("absolute right-3 top-1/2 -translate-y-1/2 text-caption text-ink-tertiary")}>
+                        {draft.length}/{MAX_DESCRIBE_LENGTH}
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleSubmitDraft}
+                      disabled={!draft.trim()}
                       className={tx(
-                        "w-full px-3 py-2.5 pr-12 rounded-lg text-body-sm bg-surface-2 border border-hairline",
-                        "text-ink placeholder:text-ink-tertiary focus:outline-none focus:border-primary transition-colors",
-                      )}
-                    />
-                    <span
-                      className={tx(
-                        "absolute right-3 top-1/2 -translate-y-1/2 text-caption text-ink-tertiary",
+                        "w-full px-4 py-2.5 rounded-lg text-button font-medium transition-colors",
+                        draft.trim()
+                          ? "bg-primary text-on-primary hover:bg-primary-hover"
+                          : "bg-surface-3 text-ink-subtle cursor-not-allowed",
                       )}
                     >
-                      {draft.length}/{MAX_DESCRIBE_LENGTH}
-                    </span>
-                  </div>
-                  <button
-                    onClick={handleSubmitDraft}
-                    disabled={!draft.trim()}
-                    className={tx(
-                      "w-full px-4 py-2.5 rounded-lg text-button font-medium transition-colors",
-                      draft.trim()
-                        ? "bg-primary text-on-primary hover:bg-primary-hover"
-                        : "bg-surface-3 text-ink-subtle cursor-not-allowed",
-                    )}
-                  >
-                    提交描述
-                  </button>
-                  <span className={tx("text-caption text-ink-tertiary")}>提交后不可修改</span>
-                </>
-              )
-            ) : (
-              <span className={tx("text-body-sm text-ink-subtle")}>你已出局，观战中</span>
-            ))}
+                      提交描述
+                    </button>
+                    <span className={tx("text-caption text-ink-tertiary")}>提交后不可修改</span>
+                  </>
+                )
+              ) : (
+                <span className={tx("text-body-sm text-ink-subtle")}>你已出局，观战中</span>
+              ))}
 
-          {phase === "voting" && (
-            <div className={tx("flex flex-col items-center gap-1")}>
-              {!iAmAlive ? (
-                <span className={tx("text-body-sm text-ink-subtle")}>
-                  你已出局，无法投票（观战中）
-                </span>
+            {phase === "voting" &&
+              (!iAmAlive ? (
+                <span className={tx("text-body-sm text-ink-subtle")}>你已出局，无法投票（观战中）</span>
               ) : iHaveVoted ? (
                 <>
                   <span className={tx("text-body-sm text-semantic-success font-medium")}>✅ 已投票</span>
@@ -280,13 +307,12 @@ export default function PlayerCircle({
                     </span>
                   )}
                 </>
-              )}
-            </div>
-          )}
+              ))}
 
-          {phase === "reveal" && (
-            <span className={tx("text-body-sm text-ink-subtle")}>本轮结果公示中…</span>
-          )}
+            {phase === "reveal" && (
+              <span className={tx("text-body-sm text-ink-subtle")}>本轮结果公示中…</span>
+            )}
+          </div>
         </div>
       </div>
     </div>

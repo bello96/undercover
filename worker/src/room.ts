@@ -34,6 +34,7 @@ interface PlayerInfoWire {
   name: string;
   isHost: boolean;
   alive: boolean;
+  ready: boolean;
 }
 
 // ============ GameRoom Durable Object ============
@@ -48,6 +49,7 @@ export class GameRoom implements DurableObject {
   private joinOrder: string[] = [];
   private phase: GamePhase = "lobby";
   private chatHistory: ChatEntry[] = [];
+  private readyIds: string[] = []; // 大厅已准备的非房主玩家（开局/重置时清空）
   private disconnectedPlayers = new Map<string, DisconnectedPlayer>();
   private lastActivityAt = 0;
   // touchActivity 节流：避免每条消息都 storage.put + setAlarm。
@@ -95,6 +97,7 @@ export class GameRoom implements DurableObject {
       "joinOrder",
       "phase",
       "chatHistory",
+      "readyIds",
       "disconnectedPlayers",
       "lastActivityAt",
       // 玩法字段
@@ -118,6 +121,7 @@ export class GameRoom implements DurableObject {
     this.joinOrder = (data.get("joinOrder") as string[]) ?? [];
     this.phase = (data.get("phase") as GamePhase) ?? "lobby";
     this.chatHistory = (data.get("chatHistory") as ChatEntry[]) ?? [];
+    this.readyIds = (data.get("readyIds") as string[]) ?? [];
 
     const dcRaw = data.get("disconnectedPlayers") as [string, DisconnectedPlayer][] | null;
     this.disconnectedPlayers = dcRaw
@@ -148,6 +152,7 @@ export class GameRoom implements DurableObject {
       joinOrder: this.joinOrder,
       phase: this.phase,
       chatHistory: this.chatHistory,
+      readyIds: this.readyIds,
       disconnectedPlayers: Array.from(this.disconnectedPlayers.entries()),
       lastActivityAt: this.lastActivityAt,
       // 玩法字段
@@ -265,6 +270,7 @@ export class GameRoom implements DurableObject {
           name,
           isHost: id === this.hostId,
           alive: this.isPlayerActive(id) && !this.eliminatedIds.includes(id),
+          ready: this.readyIds.includes(id),
         });
       }
     }
@@ -414,6 +420,9 @@ export class GameRoom implements DurableObject {
         break;
       case "nextGame":
         await this.onNextGame(ws);
+        break;
+      case "ready":
+        await this.onReady(ws, msg.ready === true);
         break;
     }
   }
@@ -636,6 +645,7 @@ export class GameRoom implements DurableObject {
           name: player.name,
           isHost: player.id === this.hostId,
           alive: true,
+          ready: false,
         },
       },
       ws,
@@ -683,6 +693,28 @@ export class GameRoom implements DurableObject {
     );
   }
 
+  /** 大厅准备 / 取消准备：仅大厅、非房主可切换；幂等；广播 readyUpdate。 */
+  private async onReady(ws: WebSocket, ready: boolean) {
+    const player = this.getPlayer(ws);
+    if (!player) {
+      return;
+    }
+    if (this.phase !== "lobby" || player.id === this.hostId) {
+      return;
+    }
+    const isReady = this.readyIds.includes(player.id);
+    if (ready === isReady) {
+      return;
+    }
+    if (ready) {
+      this.readyIds.push(player.id);
+    } else {
+      this.readyIds = this.readyIds.filter((id) => id !== player.id);
+    }
+    await this.saveState();
+    this.broadcast({ type: "readyUpdate", playerId: player.id, ready });
+  }
+
   /** host 开局：发词、分配卧底、进入首轮描述，逐 ws 个性化下发各自的词。 */
   private async onStartGame(ws: WebSocket) {
     const player = this.getPlayer(ws);
@@ -694,6 +726,14 @@ export class GameRoom implements DurableObject {
     }
     if (this.getJoinedCount() < MIN_PLAYERS) {
       this.send(ws, { type: "error", message: `至少需要 ${MIN_PLAYERS} 人才能开始` });
+      return;
+    }
+    // 非房主玩家必须全部已准备
+    const nonHostIds = this.getJoinedWebSockets()
+      .map(({ player: p }) => p.id)
+      .filter((id) => id !== this.hostId);
+    if (!nonHostIds.every((id) => this.readyIds.includes(id))) {
+      this.send(ws, { type: "error", message: "还有玩家未准备" });
       return;
     }
 
@@ -717,6 +757,7 @@ export class GameRoom implements DurableObject {
     this.votes = {};
     this.voteRound = 1;
     this.tiebreakCandidates = [];
+    this.readyIds = []; // 开局清空，下局回大厅需重新准备
 
     this.startDescribingRound();
 
@@ -1014,6 +1055,7 @@ export class GameRoom implements DurableObject {
     this.joinOrder = this.joinOrder.filter((id) => id !== dp.id);
     this.eliminatedIds = this.eliminatedIds.filter((id) => id !== dp.id);
     this.descriptions = this.descriptions.filter((d) => d.playerId !== dp.id);
+    this.readyIds = this.readyIds.filter((id) => id !== dp.id);
     this.votes = Object.fromEntries(
       Object.entries(this.votes).filter(([voter, target]) => voter !== dp.id && target !== dp.id),
     );
@@ -1039,6 +1081,7 @@ export class GameRoom implements DurableObject {
         this.joinOrder.find((id) => this.isPlayerActive(id)) ??
         allRemaining[0].id;
       this.hostId = newHost;
+      this.readyIds = this.readyIds.filter((id) => id !== newHost); // 新房主不参与准备
     }
 
     const inGame =
@@ -1057,6 +1100,12 @@ export class GameRoom implements DurableObject {
     } else {
       // 大厅，或离开的是已出局观战者：仅通知 + 持久化
       this.broadcast({ type: "playerLeft", playerId: dp.id });
+      // host 在大厅迁移：补发完整 roomState，让各端更新房主与准备态
+      if (wasHost && this.phase === "lobby") {
+        for (const { ws: w, player: p } of this.getJoinedWebSockets()) {
+          this.buildRoomState(w, p.id);
+        }
+      }
       await this.saveState();
     }
   }
@@ -1117,6 +1166,7 @@ export class GameRoom implements DurableObject {
     this.tiebreakCandidates = [];
     this.phaseDeadline = 0;
     this.lastRevealEliminatedId = null;
+    this.readyIds = []; // 回大厅需重新准备
   }
 
   // ============ Helpers ============
