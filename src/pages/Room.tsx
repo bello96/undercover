@@ -3,9 +3,9 @@ import { tx } from "@twind/core";
 import { useWebSocket } from "../hooks/useWebSocket";
 import Lobby from "../components/Lobby";
 import WordCard from "../components/WordCard";
-import PlayerList from "../components/PlayerList";
-import DescribePanel from "../components/DescribePanel";
-import VotePanel from "../components/VotePanel";
+import PhaseBar from "../components/PhaseBar";
+import PlayerCards from "../components/PlayerCards";
+import WordRevealOverlay from "../components/WordRevealOverlay";
 import RevealOverlay from "../components/RevealOverlay";
 import GameOver from "../components/GameOver";
 import Toast from "../components/Toast";
@@ -52,9 +52,7 @@ interface RoomView {
   myId: string | null;
   players: PlayerInfo[];
   round: number;
-  currentSpeakerId: string | undefined;
   deadline: number | undefined;
-  speakingOrder: string[];
   descriptions: DescribeEntry[];
   votedPlayerIds: string[];
   tiebreakCandidates: string[];
@@ -72,9 +70,7 @@ const INITIAL_ROOM_VIEW: RoomView = {
   myId: null,
   players: [],
   round: 0,
-  currentSpeakerId: undefined,
   deadline: undefined,
-  speakingOrder: [],
   descriptions: [],
   votedPlayerIds: [],
   tiebreakCandidates: [],
@@ -88,6 +84,9 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
   const [view, setView] = useState<RoomView>(INITIAL_ROOM_VIEW);
   const [joinError, setJoinError] = useState("");
   const [toast, setToast] = useState<{ message: string; id: number; type: "error" | "info" | "success" } | null>(null);
+  // 开局「你的词语」浮层：仅在收到 gameStarted 时弹（重连走 roomState 不弹）。
+  const [showWordReveal, setShowWordReveal] = useState(false);
+  const dismissWordReveal = useCallback(() => setShowWordReveal(false), []);
 
   // 是否曾成功加入（收到 roomState + myId）。重连时跳过 10s 超时。
   const hasJoinedOnceRef = useRef(false);
@@ -124,9 +123,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
           myId: msg.yourId,
           players: msg.players,
           round: msg.round,
-          currentSpeakerId: msg.currentSpeakerId,
           deadline: msg.deadline,
-          speakingOrder: msg.speakingOrder ?? [],
           descriptions: msg.descriptions ?? [],
           votedPlayerIds: msg.votedPlayerIds ?? [],
           tiebreakCandidates: msg.tiebreakCandidates ?? [],
@@ -168,12 +165,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       }
 
       case "gameStarted": {
+        // 开局：弹「你的词语」浮层 + 进入首轮描述
+        setShowWordReveal(true);
         setView((prev) => ({
           ...prev,
           yourWord: msg.yourWord,
           phase: "describing",
-          speakingOrder: msg.speakingOrder,
-          currentSpeakerId: msg.currentSpeakerId,
           deadline: msg.deadline,
           round: msg.round,
           voteResult: null,
@@ -186,37 +183,41 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       }
 
       case "phaseChange": {
-        setView((prev) => ({
-          ...prev,
-          phase: msg.phase,
-          round: msg.round ?? prev.round,
-          currentSpeakerId: msg.currentSpeakerId ?? prev.currentSpeakerId,
-          deadline: msg.deadline ?? prev.deadline,
-          speakingOrder: msg.speakingOrder ?? prev.speakingOrder,
-          tiebreakCandidates: msg.tiebreakCandidates ?? [],
-          // 进入 reveal 时保留 voteResult（揭晓需要它）；离开 reveal 才清除
-          voteResult: msg.phase === "reveal" ? prev.voteResult : null,
-        }));
-        break;
-      }
-
-      case "turnChange": {
-        setView((prev) => ({
-          ...prev,
-          currentSpeakerId: msg.currentSpeakerId,
-          deadline: msg.deadline,
-        }));
+        setView((prev) => {
+          const enteringDescribing = msg.phase === "describing";
+          const enteringVoting = msg.phase === "voting";
+          return {
+            ...prev,
+            phase: msg.phase,
+            round: msg.round ?? prev.round,
+            deadline: msg.deadline ?? prev.deadline,
+            tiebreakCandidates: msg.tiebreakCandidates ?? [],
+            // 进入 reveal 时保留 voteResult（揭晓需要它）；其余阶段清除
+            voteResult: msg.phase === "reveal" ? prev.voteResult : null,
+            // 新一轮描述清空上轮描述；进入描述/投票（含加赛重投）清空已投票
+            descriptions: enteringDescribing ? [] : prev.descriptions,
+            votedPlayerIds: enteringDescribing || enteringVoting ? [] : prev.votedPlayerIds,
+          };
+        });
         break;
       }
 
       case "describeUpdate": {
-        setView((prev) => ({
-          ...prev,
-          descriptions: [
-            ...prev.descriptions,
-            { playerId: msg.playerId, text: msg.text, round: msg.round },
-          ],
-        }));
+        // 同时作答：任意存活者提交即广播；去重后追加（重连后 roomState 已含本轮，避免重复）
+        setView((prev) => {
+          if (
+            prev.descriptions.some((d) => d.playerId === msg.playerId && d.round === msg.round)
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            descriptions: [
+              ...prev.descriptions,
+              { playerId: msg.playerId, text: msg.text, round: msg.round },
+            ],
+          };
+        });
         break;
       }
 
@@ -340,10 +341,8 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
     return () => window.clearTimeout(timer);
   }, [joinError, onLeave]);
 
-  // toast 自动消失由 <Toast> 组件内部通过 onClose 回调处理，此处无需额外 useEffect
-
   // ------------------------------------------------------------------
-  // 渲染：未加入 / 出错 → 全屏提示；已加入断线 → 保留主 UI + 顶部 banner
+  // 渲染：未加入 / 出错 → 全屏提示
   // ------------------------------------------------------------------
   if (!view.myId || joinError) {
     return (
@@ -385,37 +384,36 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
     descriptions,
     votedPlayerIds,
     round,
-    currentSpeakerId,
     tiebreakCandidates,
+    voteResult,
     gameOver,
   } = view;
 
-  return (
-    <div className={tx("min-h-screen bg-canvas text-ink flex flex-col")}>
-      {/* 重连 banner：已加入后断线才显示，不阻断主 UI */}
-      {!connected && (
-        <div
-          className={tx(
-            "bg-surface-2 border-b border-hairline text-center text-caption py-2",
-            "text-ink-muted",
-          )}
-        >
-          网络异常，正在重连...
-        </div>
-      )}
+  const meInfo = players.find((p) => p.id === myId);
+  const iAmEliminated = meInfo ? !meInfo.alive : false;
+  const aliveCount = players.filter((p) => p.alive).length;
+  const inGame = phase === "describing" || phase === "voting" || phase === "reveal";
 
-      {/* Toast */}
-      {toast && (
-        <Toast
-          key={toast.id}
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
+  const reconnectBanner = !connected && (
+    <div
+      className={tx(
+        "bg-surface-2 border-b border-hairline text-center text-caption py-2 text-ink-muted",
       )}
+    >
+      网络异常，正在重连...
+    </div>
+  );
 
-      {/* 阶段路由 */}
-      {phase === "lobby" && (
+  const toastEl = toast && (
+    <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+  );
+
+  // 大厅：全屏（可自然增高/滚动）
+  if (phase === "lobby") {
+    return (
+      <div className={tx("min-h-screen bg-canvas text-ink")}>
+        {reconnectBanner}
+        {toastEl}
         <Lobby
           roomCode={roomCode}
           players={players}
@@ -424,122 +422,73 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
           myId={myId}
           send={send}
         />
+      </div>
+    );
+  }
+
+  // 游戏中 / 结算：双栏（左主区 + 右常驻聊天），结算用覆盖层
+  return (
+    <div className={tx("h-screen bg-canvas text-ink flex flex-col overflow-hidden")}>
+      {reconnectBanner}
+      {toastEl}
+
+      {showWordReveal && yourWord && (
+        <WordRevealOverlay word={yourWord} onDismiss={dismissWordReveal} />
       )}
 
-      {/* 描述阶段 */}
-      {phase === "describing" && (
-        <div className={tx("flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full flex flex-col gap-4")}>
-          {/* 阶段标题 */}
-          <h2 className={tx("text-headline font-display font-semibold text-ink")}>
-            描述阶段 — 第 {round} 轮
-          </h2>
-
-          {/* 词卡：只显示词，绝不显示身份 */}
-          <WordCard
-            word={yourWord}
-            eliminated={!players.find((p) => p.id === myId)?.alive}
-          />
-
-          {/* 玩家列表：高亮当前发言者 + 倒计时 */}
-          <PlayerList
-            players={players}
-            myId={myId}
-            currentSpeakerId={currentSpeakerId}
-            deadline={view.deadline}
-            phase={phase}
-          />
-
-          {/* 描述面板：本轮记录 + 输入区 */}
-          <DescribePanel
-            descriptions={descriptions}
-            round={round}
-            players={players}
-            isMyTurn={currentSpeakerId === myId}
-            currentSpeakerName={players.find((p) => p.id === currentSpeakerId)?.name}
-            onSubmit={(text) => send({ type: "describe", text })}
-          />
-
-          {/* 聊天面板 */}
-          <ChatPanel
-            messages={view.chatMessages}
-            myId={view.myId}
-            onSend={(text) => send({ type: "chat", text })}
-          />
-        </div>
-      )}
-
-      {phase === "voting" && (
-        <div className={tx("flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full flex flex-col gap-4")}>
-          {/* 阶段标题 */}
-          <h2 className={tx("text-headline font-display font-semibold text-ink")}>
-            投票阶段 — 第 {round} 轮
-          </h2>
-
-          {/* 词卡：供参考，不显示身份 */}
-          <WordCard
-            word={yourWord}
-            eliminated={!players.find((p) => p.id === myId)?.alive}
-          />
-
-          {/* 玩家列表：显示已投票徽标 */}
-          <PlayerList
-            players={players}
-            myId={myId}
-            phase={phase}
-            votedPlayerIds={votedPlayerIds}
-          />
-
-          {/* 投票面板 */}
-          <VotePanel
-            players={players}
-            myId={myId}
-            votedPlayerIds={votedPlayerIds}
-            tiebreakCandidates={tiebreakCandidates}
-            deadline={view.deadline}
-            onVote={(targetId) => send({ type: "vote", targetId })}
-          />
-
-          {/* 聊天面板 */}
-          <ChatPanel
-            messages={view.chatMessages}
-            myId={view.myId}
-            onSend={(text) => send({ type: "chat", text })}
-          />
-        </div>
-      )}
-
-      {phase === "reveal" && (
-        <div className={tx("flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full flex flex-col gap-4")}>
-          {/* 阶段标题 */}
-          <h2 className={tx("text-headline font-display font-semibold text-ink")}>
-            公布阶段
-          </h2>
-
-          {/* 玩家列表：反映最新存活状态 */}
-          <PlayerList
-            players={players}
-            myId={myId}
-            phase={phase}
-          />
-
-          {/* 出局揭晓覆盖层 */}
-          {view.voteResult !== null && (
-            <RevealOverlay
-              eliminatedId={view.voteResult.eliminatedId}
-              eliminatedRole={view.voteResult.eliminatedRole}
-              players={players}
-            />
+      {inGame && (
+        <div
+          className={tx(
+            "flex-1 flex flex-col lg:flex-row gap-3 p-3 lg:p-4 w-full max-w-6xl mx-auto min-h-0",
           )}
+        >
+          {/* 左：游戏主区 */}
+          <div className={tx("flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto")}>
+            <PhaseBar
+              roomCode={roomCode}
+              round={round}
+              phase={phase}
+              deadline={view.deadline}
+              aliveCount={aliveCount}
+              totalCount={players.length}
+              onLeave={handleLeave}
+            />
+            <WordCard word={yourWord} eliminated={iAmEliminated} />
+            <PlayerCards
+              players={players}
+              myId={myId}
+              phase={phase}
+              descriptions={descriptions}
+              round={round}
+              votedPlayerIds={votedPlayerIds}
+              tiebreakCandidates={tiebreakCandidates}
+              voteResult={voteResult}
+              onSubmitDescribe={(text) => send({ type: "describe", text })}
+              onVote={(targetId) => send({ type: "vote", targetId })}
+            />
+          </div>
 
-          {/* 聊天面板 */}
-          <ChatPanel
-            messages={view.chatMessages}
-            myId={view.myId}
-            onSend={(text) => send({ type: "chat", text })}
-          />
+          {/* 右：常驻聊天 */}
+          <div className={tx("w-full lg:w-[350px] shrink-0 min-h-0 h-72 lg:h-auto")}>
+            <ChatPanel
+              messages={view.chatMessages}
+              myId={myId}
+              onSend={(text) => send({ type: "chat", text })}
+            />
+          </div>
         </div>
       )}
 
+      {/* 出局揭晓覆盖层（reveal 阶段叠加在主区之上） */}
+      {phase === "reveal" && voteResult !== null && (
+        <RevealOverlay
+          eliminatedId={voteResult.eliminatedId}
+          eliminatedRole={voteResult.eliminatedRole}
+          players={players}
+        />
+      )}
+
+      {/* 结算覆盖层 */}
       {phase === "ended" && gameOver !== null && (
         <GameOver
           winner={gameOver.winner}

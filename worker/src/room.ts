@@ -1,5 +1,6 @@
 import {
   ACTIVITY_PERSIST_MIN_INTERVAL_MS,
+  DESCRIBE_MS,
   INACTIVITY_TIMEOUT_MS,
   MAX_CHAT_HISTORY,
   MAX_CHAT_LENGTH,
@@ -13,10 +14,9 @@ import {
   RATE_LIMIT_WINDOW_MS,
   RECONNECT_GRACE_MS,
   REVEAL_MS,
-  TURN_MS,
   VOTE_MS,
 } from "./constants";
-import { checkWin, computeSpeakingOrder, pickUndercover, tallyVotes } from "./game";
+import { checkWin, pickUndercover, tallyVotes } from "./game";
 import { getWordPair } from "./words";
 import type {
   ChatEntry,
@@ -61,9 +61,7 @@ export class GameRoom implements DurableObject {
   private undercoverId: string | null = null;
   private eliminatedIds: string[] = []; // 已出局（留房观战）
   private round = 0;
-  private speakingOrder: string[] = [];
-  private currentSpeakerIndex = 0;
-  private descriptions: DescribeEntry[] = []; // 累积
+  private descriptions: DescribeEntry[] = []; // 当前轮已提交（每轮开始清空）
   private votes: Record<string, string> = {};
   private voteRound: 1 | 2 = 1;
   private tiebreakCandidates: string[] = [];
@@ -105,8 +103,6 @@ export class GameRoom implements DurableObject {
       "undercoverId",
       "eliminatedIds",
       "round",
-      "speakingOrder",
-      "currentSpeakerIndex",
       "descriptions",
       "votes",
       "voteRound",
@@ -135,8 +131,6 @@ export class GameRoom implements DurableObject {
     this.undercoverId = (data.get("undercoverId") as string | null) ?? null;
     this.eliminatedIds = (data.get("eliminatedIds") as string[]) ?? [];
     this.round = (data.get("round") as number) ?? 0;
-    this.speakingOrder = (data.get("speakingOrder") as string[]) ?? [];
-    this.currentSpeakerIndex = (data.get("currentSpeakerIndex") as number) ?? 0;
     this.descriptions = (data.get("descriptions") as DescribeEntry[]) ?? [];
     this.votes = (data.get("votes") as Record<string, string>) ?? {};
     this.voteRound = (data.get("voteRound") as 1 | 2) ?? 1;
@@ -162,8 +156,6 @@ export class GameRoom implements DurableObject {
       undercoverId: this.undercoverId,
       eliminatedIds: this.eliminatedIds,
       round: this.round,
-      speakingOrder: this.speakingOrder,
-      currentSpeakerIndex: this.currentSpeakerIndex,
       descriptions: this.descriptions,
       votes: this.votes,
       voteRound: this.voteRound,
@@ -484,9 +476,8 @@ export class GameRoom implements DurableObject {
     // --- 3. Phase deadline (describing/voting/reveal) ---
     if (this.phaseDeadline > 0 && now >= this.phaseDeadline) {
       if (this.phase === "describing") {
-        // 当前发言者超时：记空描述并推进（recordDescription 内部会推进发言者）
-        const speakerId = this.speakingOrder[this.currentSpeakerIndex];
-        this.recordDescription(speakerId, "（未描述）");
+        // 同时作答窗口到点：未提交者不补条目（UI 显示「未描述」），直接进投票
+        this.enterVoting();
         await this.saveState();
       } else if (this.phase === "voting") {
         // 投票超时：按已投的票计票（弃票忽略）
@@ -520,9 +511,7 @@ export class GameRoom implements DurableObject {
       maxPlayers: this.maxPlayers,
       yourId: playerId,
       round: this.round,
-      currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
       deadline: this.phaseDeadline || undefined,
-      speakingOrder: this.speakingOrder,
       descriptions: this.descriptions,
       votedPlayerIds: Object.keys(this.votes),
       tiebreakCandidates: this.tiebreakCandidates.length ? this.tiebreakCandidates : undefined,
@@ -737,66 +726,53 @@ export class GameRoom implements DurableObject {
         type: "gameStarted",
         yourWord: p.id === this.undercoverId ? this.undercoverWord : this.civilianWord,
         round: this.round,
-        speakingOrder: this.speakingOrder,
-        currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
         deadline: this.phaseDeadline,
       });
     }
     await this.saveState();
   }
 
-  /** 开一轮描述：随机首发言者，设 phase/deadline/alarm。 */
+  /** 开一轮描述（同时作答）：清空本轮描述，设 phase/deadline/alarm；无发言序。 */
   private startDescribingRound() {
-    const alive = this.aliveIds();
-    const startIndex = Math.floor(Math.random() * alive.length);
-    this.speakingOrder = computeSpeakingOrder(alive, startIndex);
-    this.currentSpeakerIndex = 0;
+    this.descriptions = [];
     this.phase = "describing";
-    this.phaseDeadline = Date.now() + TURN_MS;
+    this.phaseDeadline = Date.now() + DESCRIBE_MS;
     this.scheduleNextAlarm();
   }
 
-  /** 当前发言者提交描述。非当前发言者 / 非描述阶段 / 空内容均忽略。 */
+  /** 同时作答：任意存活者本轮提交一次（提交即广播、提交后锁定）。
+   *  非描述阶段 / 出局者 / 本轮已提交过 / 空内容均忽略；全员提交则立即进投票。 */
   private async onDescribe(ws: WebSocket, text: string) {
     const player = this.getPlayer(ws);
     if (!player || this.phase !== "describing") {
       return;
     }
-    if (player.id !== this.speakingOrder[this.currentSpeakerIndex]) {
-      return; // 非当前发言者
+    const alive = this.aliveIds();
+    if (!alive.includes(player.id)) {
+      return; // 出局者不能作答
+    }
+    if (this.descriptions.some((d) => d.playerId === player.id)) {
+      return; // 本轮已提交，锁定
     }
     const trimmed = (text || "").trim().slice(0, MAX_DESCRIBE_LENGTH);
     if (!trimmed) {
       return;
     }
     this.recordDescription(player.id, trimmed);
+    // 全部存活者都提交完 → 立即进投票；否则落盘
+    if (alive.every((id) => this.descriptions.some((d) => d.playerId === id))) {
+      this.enterVoting();
+    }
     await this.saveState();
   }
 
-  /** 记录描述并推进；广播 describeUpdate；轮完则转投票。 */
+  /** 记录一条描述并实时广播（同时作答无发言序，不推进）。 */
   private recordDescription(playerId: string, text: string) {
     this.descriptions.push({ playerId, text, round: this.round });
     this.broadcast({ type: "describeUpdate", playerId, text, round: this.round });
-    this.advanceSpeaker();
   }
 
-  /** 推进到下一位发言者；全部发言完毕则进入投票。 */
-  private advanceSpeaker() {
-    this.currentSpeakerIndex++;
-    if (this.currentSpeakerIndex >= this.speakingOrder.length) {
-      this.enterVoting();
-    } else {
-      this.phaseDeadline = Date.now() + TURN_MS;
-      this.scheduleNextAlarm();
-      this.broadcast({
-        type: "turnChange",
-        currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
-        deadline: this.phaseDeadline,
-      });
-    }
-  }
-
-  /** 进入投票阶段（真正的投票 handler 在后续单元）。 */
+  /** 进入投票阶段。 */
   private enterVoting() {
     this.phase = "voting";
     this.votes = {};
@@ -934,9 +910,7 @@ export class GameRoom implements DurableObject {
         type: "phaseChange",
         phase: "describing",
         round: this.round,
-        currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
         deadline: this.phaseDeadline,
-        speakingOrder: this.speakingOrder,
       });
     }
   }
@@ -1039,6 +1013,7 @@ export class GameRoom implements DurableObject {
     // 从在场序列与出局列表移除；并从投票中删除该人作为投票者或被投目标的条目
     this.joinOrder = this.joinOrder.filter((id) => id !== dp.id);
     this.eliminatedIds = this.eliminatedIds.filter((id) => id !== dp.id);
+    this.descriptions = this.descriptions.filter((d) => d.playerId !== dp.id);
     this.votes = Object.fromEntries(
       Object.entries(this.votes).filter(([voter, target]) => voter !== dp.id && target !== dp.id),
     );
@@ -1077,8 +1052,8 @@ export class GameRoom implements DurableObject {
         await this.endGame(winner);
         return;
       }
-      // 游戏继续：修复当前阶段（发言序 / 投票计票时机）
-      await this.fixupPhaseAfterRemoval(dp.id);
+      // 游戏继续：修复当前阶段（描述/投票的计票时机）
+      await this.fixupPhaseAfterRemoval();
     } else {
       // 大厅，或离开的是已出局观战者：仅通知 + 持久化
       this.broadcast({ type: "playerLeft", playerId: dp.id });
@@ -1086,37 +1061,16 @@ export class GameRoom implements DurableObject {
     }
   }
 
-  /** 离开者影响当前阶段时的修复：描述阶段重建发言序；投票阶段检查是否已可计票。 */
-  private async fixupPhaseAfterRemoval(removedId: string) {
+  /** 离开者影响当前阶段时的修复：描述/投票阶段都检查「剩余存活者是否已全部行动」可推进。 */
+  private async fixupPhaseAfterRemoval() {
     if (this.phase === "describing") {
-      const curId = this.speakingOrder[this.currentSpeakerIndex];
-      const wasCurrent = curId === removedId;
-      // 从发言序移除离开者
-      this.speakingOrder = this.speakingOrder.filter((id) => id !== removedId);
-      if (this.currentSpeakerIndex >= this.speakingOrder.length) {
-        // 离开者在末尾或之后导致越界 → 本轮发言已结束，进投票
-        // enterVoting 自身只 setAlarm/broadcast 不落盘，此处须显式 saveState，
-        // 否则 phase=voting/清票/joinOrder 删除仅在内存，休眠后会重载陈旧 describing 态
+      // 同时作答：离开者已从 aliveIds 移除。剩余存活者都已提交 → 进投票，否则继续等待。
+      // enterVoting 自身只 setAlarm/broadcast 不落盘，故下方统一 saveState。
+      const alive = this.aliveIds();
+      if (alive.length > 0 && alive.every((id) => this.descriptions.some((d) => d.playerId === id))) {
         this.enterVoting();
-        await this.saveState();
-      } else if (wasCurrent) {
-        // 离开者正好是当前发言者：移除后 index 现指向原下一个，重置 deadline 并广播
-        this.phaseDeadline = Date.now() + TURN_MS;
-        this.scheduleNextAlarm();
-        this.broadcast({
-          type: "turnChange",
-          currentSpeakerId: this.speakingOrder[this.currentSpeakerIndex],
-          deadline: this.phaseDeadline,
-        });
-        await this.saveState();
-      } else {
-        // 调整 index 使其仍指向原「当前发言者」
-        const idx = this.speakingOrder.indexOf(curId);
-        if (idx >= 0) {
-          this.currentSpeakerIndex = idx;
-        }
-        await this.saveState();
       }
+      await this.saveState();
     } else if (this.phase === "voting") {
       const alive = this.aliveIds();
       if (alive.length > 0 && alive.every((id) => this.votes[id] !== undefined)) {
@@ -1157,8 +1111,6 @@ export class GameRoom implements DurableObject {
     this.undercoverId = null;
     this.eliminatedIds = [];
     this.round = 0;
-    this.speakingOrder = [];
-    this.currentSpeakerIndex = 0;
     this.descriptions = [];
     this.votes = {};
     this.voteRound = 1;

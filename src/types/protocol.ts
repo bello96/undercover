@@ -1,6 +1,6 @@
 // 前后端共享消息契约。worker 端 types/room 手动镜像字段（不跨包 import）。
 // 与 worker/src/constants.ts 的 PROTOCOL_VERSION 双写一致。
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export type GamePhase = "lobby" | "describing" | "voting" | "reveal" | "ended";
 export type Role = "civilian" | "undercover";
@@ -48,9 +48,7 @@ export interface S_RoomState {
   maxPlayers: number;
   yourId: string;
   round: number;
-  currentSpeakerId?: string;
-  deadline?: number;          // 当前阶段倒计时绝对时间戳（describing/voting）
-  speakingOrder?: string[];
+  deadline?: number;          // 当前阶段倒计时绝对时间戳（describing 窗口/voting）
   descriptions?: DescribeEntry[]; // 已发言记录（累积）
   votedPlayerIds?: string[];      // 本轮已投票者（不含票向）
   tiebreakCandidates?: string[];
@@ -63,20 +61,15 @@ export interface S_GameStarted {
   type: "gameStarted";
   yourWord: string;           // 逐 ws 个性化
   round: number;
-  speakingOrder: string[];
-  currentSpeakerId: string;
   deadline: number;
 }
 export interface S_PhaseChange {
   type: "phaseChange";
   phase: GamePhase;
   round?: number;
-  currentSpeakerId?: string;
   deadline?: number;
-  speakingOrder?: string[];
   tiebreakCandidates?: string[];
 }
-export interface S_TurnChange { type: "turnChange"; currentSpeakerId: string; deadline: number; }
 export interface S_DescribeUpdate { type: "describeUpdate"; playerId: string; text: string; round: number; }
 export interface S_VoteUpdate { type: "voteUpdate"; voterId: string; }
 export interface S_VoteResult {
@@ -100,5 +93,5 @@ export interface S_RoomClosed { type: "roomClosed"; reason: string; }
 export interface S_Pong { type: "pong"; }
 export type ServerMessage =
   | S_RoomState | S_PlayerJoined | S_PlayerLeft | S_GameStarted | S_PhaseChange
-  | S_TurnChange | S_DescribeUpdate | S_VoteUpdate | S_VoteResult | S_GameOver
+  | S_DescribeUpdate | S_VoteUpdate | S_VoteResult | S_GameOver
   | S_Chat | S_Error | S_RoomClosed | S_Pong;

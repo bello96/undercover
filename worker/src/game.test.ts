@@ -1,21 +1,12 @@
 // worker/src/game.test.ts
 import { describe, it, expect } from "vitest";
-import { pickUndercover, computeSpeakingOrder, tallyVotes, checkWin, parseWordPair, pickFallback } from "./game";
+import { pickUndercover, tallyVotes, checkWin, parseWordPair, pickFallback } from "./game";
 
 describe("pickUndercover", () => {
   it("从玩家中选出一个，索引由注入的 rand 决定", () => {
     const ids = ["a", "b", "c"];
     expect(pickUndercover(ids, () => 0)).toBe("a");
     expect(pickUndercover(ids, () => 0.99)).toBe("c"); // floor(0.99*3)=2
-  });
-});
-
-describe("computeSpeakingOrder", () => {
-  it("从 startIndex 开始按原顺序轮转", () => {
-    expect(computeSpeakingOrder(["a", "b", "c", "d"], 2)).toEqual(["c", "d", "a", "b"]);
-  });
-  it("startIndex 0 时不变", () => {
-    expect(computeSpeakingOrder(["a", "b", "c"], 0)).toEqual(["a", "b", "c"]);
   });
 });
 

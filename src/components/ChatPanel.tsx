@@ -36,7 +36,7 @@ export default function ChatPanel({ messages, myId, onSend }: Props) {
     <div
       className={tx(
         "flex flex-col bg-surface-1 rounded-lg overflow-hidden border border-hairline",
-        "min-h-0",
+        "h-full min-h-0",
       )}
     >
       {/* Header */}
@@ -47,7 +47,7 @@ export default function ChatPanel({ messages, myId, onSend }: Props) {
       {/* Messages */}
       <div
         ref={listRef}
-        className={tx("flex-1 overflow-y-auto p-3 space-y-1.5 min-h-0 max-h-48")}
+        className={tx("flex-1 overflow-y-auto p-3 space-y-1.5 min-h-0")}
       >
         {messages.length === 0 && (
           <div className={tx("text-caption text-ink-tertiary text-center py-2")}>

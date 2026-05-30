@@ -16,17 +16,6 @@ export function pickUndercover(playerIds: string[], rand: () => number): string 
   return playerIds[Math.floor(rand() * playerIds.length)];
 }
 
-/** 把存活者列表轮转到从 startIndex 开始（每轮随机首发言者，其余按原座位顺序）。 */
-export function computeSpeakingOrder(aliveIds: string[], startIndex: number): string[] {
-  const n = aliveIds.length;
-  const start = ((startIndex % n) + n) % n;
-  const out: string[] = [];
-  for (let i = 0; i < n; i++) {
-    out.push(aliveIds[(start + i) % n]);
-  }
-  return out;
-}
-
 // ─────────────────── Task 6 ───────────────────
 
 /** 统计票数。topIds = 得票最高者（可能多个 = 平票）；无票时为空数组。 */
