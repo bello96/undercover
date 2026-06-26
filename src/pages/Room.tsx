@@ -1,16 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { tx } from "@twind/core";
 import { useWebSocket } from "../hooks/useWebSocket";
-import Lobby from "../components/Lobby";
 import TopBar from "../components/TopBar";
 import GameSidebar from "../components/GameSidebar";
-import PlayerCircle from "../components/PlayerCircle";
-import PhaseStepper from "../components/PhaseStepper";
+import InvitePanel from "../components/InvitePanel";
+import LobbyView from "../components/LobbyView";
+import GameView from "../components/GameView";
+import EndedView from "../components/EndedView";
 import RulesModal from "../components/RulesModal";
 import ChatPanel from "../components/ChatPanel";
 import WordRevealOverlay from "../components/WordRevealOverlay";
-import RevealOverlay from "../components/RevealOverlay";
-import GameOver from "../components/GameOver";
 import Toast from "../components/Toast";
 import { PLAYER_ID_KEY } from "../App";
 import type {
@@ -411,7 +410,10 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
 
   const meInfo = players.find((p) => p.id === myId);
   const iAmEliminated = meInfo ? !meInfo.alive : false;
-  const inGame = phase === "describing" || phase === "voting" || phase === "reveal";
+  const isLobby = phase === "lobby";
+  const isEnded = phase === "ended";
+  const centerBoxCls =
+    "bg-surface-1 border border-hairline rounded-xl shadow-card px-5 py-4 flex flex-col items-center gap-2 text-center";
 
   const reconnectBanner = !connected && (
     <div
@@ -432,25 +434,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
     />
   );
 
-  // 大厅：全屏（可自然增高/滚动）
-  if (phase === "lobby") {
-    return (
-      <div className={tx("min-h-screen bg-canvas text-ink")}>
-        {reconnectBanner}
-        {toastEl}
-        <Lobby
-          roomCode={roomCode}
-          players={players}
-          hostId={hostId}
-          maxPlayers={maxPlayers}
-          myId={myId}
-          send={send}
-        />
-      </div>
-    );
-  }
-
-  // 游戏中 / 结算：顶栏 + 三栏（左信息 / 中环形+进度条 / 右聊天），覆盖层叠加
+  // 统一房间外壳：大厅/游戏/结算同一布局（顶栏 + 左信息 + 中牌桌 + 右聊天）
   return (
     <div className={tx("h-screen bg-canvas text-ink flex flex-col overflow-hidden")}>
       {reconnectBanner}
@@ -461,88 +445,114 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       )}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
-      {inGame && (
-        <>
-          <TopBar
-            roomCode={roomCode}
-            round={round}
-            phase={phase}
-            deadline={view.deadline}
-            minPlayers={MIN_PLAYERS}
+      <TopBar
+        roomCode={roomCode}
+        round={round}
+        phase={phase}
+        deadline={view.deadline}
+        minPlayers={MIN_PLAYERS}
+        maxPlayers={maxPlayers}
+        onLeave={handleLeave}
+        onShowRules={() => setShowRules(true)}
+      />
+
+      <div className={tx("flex-1 flex gap-3 p-3 min-h-0 overflow-hidden")}>
+        {/* 左：邀请（大厅）/ 词语信息（游戏·结算） */}
+        <div className={tx("w-[264px] shrink-0 overflow-y-auto min-h-0")}>
+          {isLobby ? (
+            <InvitePanel roomCode={roomCode} isFull={players.length >= maxPlayers} />
+          ) : (
+            <GameSidebar
+              word={yourWord}
+              eliminated={iAmEliminated}
+              playerCount={players.length}
+              maxPlayers={maxPlayers}
+              round={round}
+              phase={phase}
+            />
+          )}
+        </div>
+
+        {/* 中：牌桌（阶段视图） */}
+        {isLobby ? (
+          <LobbyView
+            players={players}
+            myId={myId}
+            hostId={hostId}
             maxPlayers={maxPlayers}
-            onLeave={handleLeave}
-            onShowRules={() => setShowRules(true)}
+            onToggleReady={(ready) => send({ type: "ready", ready })}
+            onStartGame={() => send({ type: "startGame" })}
           />
-
-          <div className={tx("flex-1 flex gap-3 p-3 min-h-0 overflow-hidden")}>
-            {/* 左：信息栏 */}
-            <div className={tx("w-[264px] shrink-0 overflow-y-auto min-h-0")}>
-              <GameSidebar
-                word={yourWord}
-                eliminated={iAmEliminated}
-                playerCount={players.length}
-                maxPlayers={maxPlayers}
-                round={round}
-                phase={phase}
-              />
-            </div>
-
-            {/* 中：环形玩家 + 阶段进度条 */}
-            <div className={tx("flex-1 flex flex-col gap-3 min-h-0 min-w-0")}>
-              <PlayerCircle
-                players={players}
-                myId={myId}
-                hostId={hostId}
-                phase={phase}
-                descriptions={descriptions}
-                round={round}
-                votedPlayerIds={votedPlayerIds}
-                tiebreakCandidates={tiebreakCandidates}
-                voteResult={voteResult}
-                connected={connected}
-                onSubmitDescribe={(text) => send({ type: "describe", text })}
-                onVote={(targetId) => send({ type: "vote", targetId })}
-              />
-              <PhaseStepper phase={phase} />
-            </div>
-
-            {/* 右：聊天（仅聊天信息） */}
-            <div className={tx("w-[336px] shrink-0 min-h-0")}>
-              <ChatPanel
-                messages={chatMessages}
-                players={players}
-                myId={myId}
-                connected={connected}
-                onSend={(text) => send({ type: "chat", text })}
-              />
+        ) : isEnded && gameOver ? (
+          <EndedView
+            players={players}
+            myId={myId}
+            hostId={hostId}
+            winner={gameOver.winner}
+            undercoverId={gameOver.undercoverId}
+            civilianWord={gameOver.civilianWord}
+            undercoverWord={gameOver.undercoverWord}
+            roles={gameOver.roles}
+            isHost={hostId === myId}
+            onNextGame={() => send({ type: "nextGame" })}
+            onLeave={handleLeave}
+          />
+        ) : isEnded ? (
+          // 重连恰好落在「已结束」窗口：roomState 不含结算数据，给个兜底面板
+          <div className={tx("flex-1 flex items-center justify-center min-h-0")}>
+            <div className={tx(centerBoxCls)}>
+              <span className={tx("text-body font-medium text-ink")}>本局已结束</span>
+              <span className={tx("text-caption text-ink-subtle")}>等待房主开始新一局…</span>
+              {hostId === myId && (
+                <button
+                  onClick={() => send({ type: "nextGame" })}
+                  className={tx(
+                    "px-4 py-2 rounded-lg text-button font-medium bg-primary text-on-primary",
+                    "hover:bg-primary-hover transition-all active:scale-[0.98]",
+                  )}
+                >
+                  再来一局
+                </button>
+              )}
+              <button
+                onClick={handleLeave}
+                className={tx(
+                  "px-4 py-2 rounded-lg text-button font-medium bg-surface-2 border border-hairline text-ink-muted",
+                  "hover:border-hairline-strong transition-all active:scale-[0.98]",
+                )}
+              >
+                返回首页
+              </button>
             </div>
           </div>
-        </>
-      )}
+        ) : (
+          <GameView
+            players={players}
+            myId={myId}
+            hostId={hostId}
+            phase={phase}
+            descriptions={descriptions}
+            round={round}
+            votedPlayerIds={votedPlayerIds}
+            tiebreakCandidates={tiebreakCandidates}
+            voteResult={voteResult}
+            connected={connected}
+            onSubmitDescribe={(text) => send({ type: "describe", text })}
+            onVote={(targetId) => send({ type: "vote", targetId })}
+          />
+        )}
 
-      {/* 出局揭晓覆盖层（reveal 阶段叠加在主区之上） */}
-      {phase === "reveal" && voteResult !== null && (
-        <RevealOverlay
-          eliminatedId={voteResult.eliminatedId}
-          eliminatedRole={voteResult.eliminatedRole}
-          players={players}
-        />
-      )}
-
-      {/* 结算覆盖层 */}
-      {phase === "ended" && gameOver !== null && (
-        <GameOver
-          winner={gameOver.winner}
-          undercoverId={gameOver.undercoverId}
-          civilianWord={gameOver.civilianWord}
-          undercoverWord={gameOver.undercoverWord}
-          roles={gameOver.roles}
-          players={players}
-          isHost={hostId === myId}
-          onNextGame={() => send({ type: "nextGame" })}
-          onLeave={handleLeave}
-        />
-      )}
+        {/* 右：聊天（始终在） */}
+        <div className={tx("w-[336px] shrink-0 min-h-0")}>
+          <ChatPanel
+            messages={chatMessages}
+            players={players}
+            myId={myId}
+            connected={connected}
+            onSend={(text) => send({ type: "chat", text })}
+          />
+        </div>
+      </div>
     </div>
   );
 }

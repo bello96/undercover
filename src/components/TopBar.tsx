@@ -69,7 +69,9 @@ export default function TopBar({
         <CircleTimer deadline={deadline} phase={phase} />
         <div className={tx("flex flex-col")}>
           <span className={tx("text-body-sm font-medium text-ink")}>{phaseLabel}</span>
-          <span className={tx("text-caption text-ink-subtle tabular-nums")}>第 {round} 轮</span>
+          {round >= 1 && (
+            <span className={tx("text-caption text-ink-subtle tabular-nums")}>第 {round} 轮</span>
+          )}
         </div>
       </div>
 
