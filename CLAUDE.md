@@ -2,6 +2,7 @@
 
 本文件为 AI 助手（Claude Code 等）提供该仓库的上下文。人类阅读请看 `README.md`。
 **完整设计契约见 `docs/superpowers/specs/2026-05-29-undercover-game-design.md`（权威来源，本文件与其冲突时以 spec 为准）。**
+**自主执行约束见 `AUTONOMY.md`（本项目所有任务的工作方式契约：默认连续自主完成、只在密钥/Git 写/删数据/不可逆操作等白名单情形才停下问我；AI 必须遵循）。**
 
 > 项目：**🕵️ 谁是卧底** · 在线多人实时推理游戏（3–6 人，1 卧底）
 > 线上（规划）：https://undercover.dengjiabei.cn

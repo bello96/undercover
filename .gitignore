@@ -25,3 +25,6 @@ npm-debug.log*
 .idea/
 .vscode/
 *.local
+
+# claude code（个人本机权限白名单，不入库）
+.claude/settings.local.json
