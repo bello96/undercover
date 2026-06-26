@@ -6,6 +6,7 @@ import {
   MAX_CHAT_LENGTH,
   MAX_DESCRIBE_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_NO_ELIM_ROUNDS,
   MAX_PLAYERS,
   MIN_PLAYERS,
   PROTOCOL_VERSION,
@@ -16,7 +17,7 @@ import {
   REVEAL_MS,
   VOTE_MS,
 } from "./constants";
-import { checkWin, pickUndercover, tallyVotes } from "./game";
+import { checkWin, pickUndercover, resolveAfterReveal, tallyVotes } from "./game";
 import { getWordPair } from "./words";
 import type {
   ChatEntry,
@@ -71,6 +72,9 @@ export class GameRoom implements DurableObject {
   private recentWordIndices: number[] = []; // 内置库近期去重（内存即可，不持久化）
   // reveal 阶段当轮被投出者 ID（无人淘汰为 null），advanceAfterReveal 据此判 role；持久化以防休眠丢失
   private lastRevealEliminatedId: string | null = null;
+  // 连续「无人淘汰」轮数：平票僵局累加、有人出局清零；达 MAX_NO_ELIM_ROUNDS 判僵局结束，
+  // 防两名有效玩家互投、或掉线/挂机者占位致存活数虚高时永久死循环。持久化以防休眠丢失。
+  private noElimStreak = 0;
 
   // Per-ws rolling window counter for rate limiting. WeakMap ensures the
   // entry is GC'd when the ws is collected, and hibernation resets it naturally.
@@ -112,6 +116,7 @@ export class GameRoom implements DurableObject {
       "tiebreakCandidates",
       "phaseDeadline",
       "lastRevealEliminatedId",
+      "noElimStreak",
     ]);
 
     this.created = (data.get("created") as boolean) ?? false;
@@ -141,6 +146,7 @@ export class GameRoom implements DurableObject {
     this.tiebreakCandidates = (data.get("tiebreakCandidates") as string[]) ?? [];
     this.phaseDeadline = (data.get("phaseDeadline") as number) ?? 0;
     this.lastRevealEliminatedId = (data.get("lastRevealEliminatedId") as string | null) ?? null;
+    this.noElimStreak = (data.get("noElimStreak") as number) ?? 0;
   }
 
   private async saveState() {
@@ -167,6 +173,7 @@ export class GameRoom implements DurableObject {
       tiebreakCandidates: this.tiebreakCandidates,
       phaseDeadline: this.phaseDeadline,
       lastRevealEliminatedId: this.lastRevealEliminatedId,
+      noElimStreak: this.noElimStreak,
     });
   }
 
@@ -757,6 +764,7 @@ export class GameRoom implements DurableObject {
     this.votes = {};
     this.voteRound = 1;
     this.tiebreakCandidates = [];
+    this.noElimStreak = 0;
     this.readyIds = []; // 开局清空，下局回大厅需重新准备
 
     this.startDescribingRound();
@@ -935,7 +943,16 @@ export class GameRoom implements DurableObject {
         ? "undercover"
         : "civilian"
       : null;
-    const winner = checkWin(role, this.aliveIds().length);
+    // 维护「连续无人淘汰」计数：有人出局清零，平票僵局累加
+    this.noElimStreak = eid ? 0 : this.noElimStreak + 1;
+    // 判胜负：先按出局结果（checkWin），再僵局兜底——连续多轮无法淘汰任何人
+    // （仅剩两人互投 / 掉线挂机者占位致存活数虚高）即判卧底胜，避免永久死循环。
+    const winner = resolveAfterReveal(
+      role,
+      this.aliveIds().length,
+      this.noElimStreak,
+      MAX_NO_ELIM_ROUNDS,
+    );
     if (winner) {
       await this.endGame(winner);
     } else {
@@ -1169,6 +1186,7 @@ export class GameRoom implements DurableObject {
     this.tiebreakCandidates = [];
     this.phaseDeadline = 0;
     this.lastRevealEliminatedId = null;
+    this.noElimStreak = 0;
     this.readyIds = []; // 回大厅需重新准备
   }
 

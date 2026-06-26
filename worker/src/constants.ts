@@ -3,6 +3,9 @@
 // 房间容量
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 6;
+// 连续「无人淘汰」（平票僵局）达此轮数即判僵局结束（卧底胜），
+// 防止仅剩两名有效玩家互投永远平票、或掉线/挂机者占位致存活数虚高时游戏永久死循环。
+export const MAX_NO_ELIM_ROUNDS = 2;
 
 // 输入长度上限（前端 input maxLength 必须与此一致）
 export const MAX_NAME_LENGTH = 10;

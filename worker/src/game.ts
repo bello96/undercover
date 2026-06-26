@@ -57,6 +57,38 @@ export function checkWin(
   return null;
 }
 
+/**
+ * reveal 结束后的推进判定（封装 checkWin + 僵局兜底）。
+ * 返回非 null = 游戏结束的胜方；返回 null = 进入下一轮。
+ *
+ * 1. 先按出局结果判（checkWin）：卧底出局→平民胜；出局后存活<=2→卧底胜。
+ * 2. 再判僵局：连续无人淘汰达 stalemateThreshold 轮 → 卧底胜。
+ *    这是防死循环的兜底——当「有效存活者无法形成有效淘汰」（仅剩两人互投必平票，
+ *    或掉线/挂机/僵尸连接占位使存活数虚高 >2 而真正能投票者已 <=2）时，
+ *    每轮都平票无人出局、checkWin 又因存活数虚高不结束，游戏将永久循环。
+ *    僵局判卧底胜：平民始终未能票出卧底，符合「存活<=2→卧底胜」的规则精神。
+ *
+ * @param eliminatedRole 本轮出局者角色；null = 本轮无人淘汰（平票）
+ * @param aliveCount 本轮结算后的存活人数
+ * @param noElimStreak 含本轮在内的连续「无人淘汰」轮数
+ * @param stalemateThreshold 僵局阈值（连续无淘汰多少轮即判僵局）
+ */
+export function resolveAfterReveal(
+  eliminatedRole: "civilian" | "undercover" | null,
+  aliveCount: number,
+  noElimStreak: number,
+  stalemateThreshold: number,
+): Winner | null {
+  const byElimination = checkWin(eliminatedRole, aliveCount);
+  if (byElimination) {
+    return byElimination;
+  }
+  if (noElimStreak >= stalemateThreshold) {
+    return "undercover";
+  }
+  return null;
+}
+
 // ─────────────────── Task 8 ───────────────────
 
 /** 解析 LLM 返回文本为词对；容忍 ```json 包裹；非法/相同/缺字段返回 null。 */

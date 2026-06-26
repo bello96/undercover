@@ -1,6 +1,13 @@
 // worker/src/game.test.ts
 import { describe, it, expect } from "vitest";
-import { pickUndercover, tallyVotes, checkWin, parseWordPair, pickFallback } from "./game";
+import {
+  pickUndercover,
+  tallyVotes,
+  checkWin,
+  resolveAfterReveal,
+  parseWordPair,
+  pickFallback,
+} from "./game";
 
 describe("pickUndercover", () => {
   it("从玩家中选出一个，索引由注入的 rand 决定", () => {
@@ -41,6 +48,32 @@ describe("checkWin", () => {
   });
   it("平票无人出局 → 继续", () => {
     expect(checkWin(null, 4)).toBeNull();
+  });
+});
+
+describe("resolveAfterReveal", () => {
+  const T = 2; // 僵局阈值，对应 constants.MAX_NO_ELIM_ROUNDS
+
+  it("出局卧底 → 平民胜（优先于僵局判定）", () => {
+    expect(resolveAfterReveal("undercover", 5, 9, T)).toBe("civilian");
+  });
+  it("出局平民后只剩 2 人 → 卧底胜", () => {
+    expect(resolveAfterReveal("civilian", 2, 0, T)).toBe("undercover");
+  });
+  it("出局平民但仍 >2 人、未达僵局 → 继续", () => {
+    expect(resolveAfterReveal("civilian", 3, 0, T)).toBeNull();
+  });
+  it("首次平票无人淘汰（streak=1）→ 继续", () => {
+    expect(resolveAfterReveal(null, 4, 1, T)).toBeNull();
+  });
+  // 复现并修复用户报告的死循环：掉线/挂机/僵尸连接占位使存活数虚高(>2)，
+  // 两名真实玩家互投永远平票、无人被淘汰 —— 旧逻辑 checkWin(null,3) 恒为 null 故永不结束；
+  // 连续无淘汰达阈值即判僵局结束（卧底胜），打破死循环。
+  it("连续无人淘汰达阈值 → 判僵局卧底胜（即便存活数仍 >2）", () => {
+    expect(resolveAfterReveal(null, 3, 2, T)).toBe("undercover");
+  });
+  it("连续无人淘汰达阈值但存活仍 >2，超过阈值同样结束", () => {
+    expect(resolveAfterReveal(null, 5, 3, T)).toBe("undercover");
   });
 });
 
