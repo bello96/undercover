@@ -1082,6 +1082,9 @@ export class GameRoom implements DurableObject {
         allRemaining[0].id;
       this.hostId = newHost;
       this.readyIds = this.readyIds.filter((id) => id !== newHost); // 新房主不参与准备
+      // 通知所有端房主已变更。游戏中不重发完整 roomState（会清空客户端的 voteResult
+      // 等瞬时态），只发轻量 hostChanged 让前端更新 hostId（皇冠 + 结算「再来一局」权限）。
+      this.broadcast({ type: "hostChanged", hostId: newHost });
     }
 
     const inGame =

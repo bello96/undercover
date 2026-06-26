@@ -21,7 +21,7 @@ const PHASE_LABEL: Record<string, string> = {
   lobby: "等待开始",
 };
 
-/** 顶部栏：左房间标题 / 中圆环倒计时+阶段 / 右规则+退出。 */
+/** 顶部栏：左品牌+房间 / 中圆环倒计时+阶段 / 右规则+退出。 */
 export default function TopBar({
   roomCode,
   round,
@@ -40,33 +40,27 @@ export default function TopBar({
         "flex items-center gap-3 px-4 py-2.5 border-b border-hairline bg-surface-1 shrink-0",
       )}
     >
-      {/* 左：返回 + 房间标题 */}
-      <button
-        onClick={onLeave}
-        aria-label="返回"
-        className={tx(
-          "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-body-lg",
-          "text-ink-subtle hover:text-ink hover:bg-surface-3 transition-colors",
-        )}
-      >
-        ‹
-      </button>
-      <div className={tx("flex flex-col gap-1 min-w-0")}>
-        <div className={tx("flex items-center gap-2")}>
-          <span className={tx("text-caption font-mono text-ink-subtle")}>房间 {roomCode}</span>
-          <span className={tx("text-body-sm font-semibold text-ink")}>谁是卧底</span>
+      {/* 左：品牌 + 房间 */}
+      <div className={tx("flex items-center gap-2.5 min-w-0")}>
+        <div
+          className={tx(
+            "w-9 h-9 rounded-lg bg-primary flex items-center justify-center text-body-lg shrink-0",
+          )}
+        >
+          🕵️
         </div>
-        <div className={tx("flex items-center gap-1.5")}>
-          <span
-            className={tx(
-              "text-caption text-ink-subtle bg-surface-3 border border-hairline rounded px-1.5 py-0.5",
-            )}
-          >
-            {minPlayers}-{maxPlayers} 人局
-          </span>
-          <span className={tx("text-caption text-ink-tertiary")}>
-            第 {round} 轮 / {phaseLabel}
-          </span>
+        <div className={tx("flex flex-col gap-0.5 min-w-0")}>
+          <span className={tx("text-body-sm font-semibold text-ink leading-none")}>谁是卧底</span>
+          <div className={tx("flex items-center gap-1.5")}>
+            <span className={tx("text-caption font-mono text-ink-subtle")}>房间 {roomCode}</span>
+            <span
+              className={tx(
+                "text-[10px] text-ink-tertiary bg-surface-3 border border-hairline rounded px-1 py-0.5",
+              )}
+            >
+              {minPlayers}-{maxPlayers}人
+            </span>
+          </div>
         </div>
       </div>
 
@@ -75,7 +69,7 @@ export default function TopBar({
         <CircleTimer deadline={deadline} phase={phase} />
         <div className={tx("flex flex-col")}>
           <span className={tx("text-body-sm font-medium text-ink")}>{phaseLabel}</span>
-          <span className={tx("text-caption text-ink-subtle")}>第 {round} 轮</span>
+          <span className={tx("text-caption text-ink-subtle tabular-nums")}>第 {round} 轮</span>
         </div>
       </div>
 
@@ -83,8 +77,8 @@ export default function TopBar({
       <button
         onClick={onShowRules}
         className={tx(
-          "flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg shrink-0",
-          "text-ink-subtle hover:text-ink hover:bg-surface-3 transition-colors",
+          "flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg shrink-0 transition-all active:scale-95",
+          "text-ink-subtle hover:text-ink hover:bg-surface-3",
         )}
       >
         <span className={tx("text-body")}>📖</span>
@@ -93,12 +87,12 @@ export default function TopBar({
       <button
         onClick={onLeave}
         className={tx(
-          "flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg shrink-0",
-          "text-semantic-error hover:bg-surface-3 transition-colors",
+          "flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg shrink-0 transition-all active:scale-95",
+          "text-semantic-error hover:bg-surface-3",
         )}
       >
         <span className={tx("text-body")}>🚪</span>
-        <span className={tx("text-caption")}>退出房间</span>
+        <span className={tx("text-caption")}>退出</span>
       </button>
     </div>
   );

@@ -34,7 +34,7 @@ export default function GameSidebar({
         <div className={tx("flex items-center gap-1.5")}>
           <span className={tx("text-body-sm font-medium text-ink-muted")}>本轮词语</span>
           <span
-            className={tx("text-caption text-ink-tertiary")}
+            className={tx("text-caption text-ink-tertiary cursor-help")}
             title="只有你能看到自己的词，卧底词在结算时才揭晓"
           >
             ⓘ
@@ -42,7 +42,7 @@ export default function GameSidebar({
         </div>
         <div
           className={tx(
-            "bg-surface-2 border border-hairline rounded-lg px-4 py-6 flex flex-col items-center gap-1.5",
+            "rounded-lg px-4 py-6 flex flex-col items-center gap-1.5 border bg-surface-2 border-hairline",
           )}
         >
           {eliminated ? (
@@ -57,16 +57,31 @@ export default function GameSidebar({
               <span className={tx("text-caption text-ink-subtle")}>你的词</span>
               {word ? (
                 <span
-                  className={tx("text-headline font-display font-semibold text-primary tracking-tight")}
+                  key={word}
+                  className={tx(
+                    "text-headline font-display font-semibold text-primary tracking-tight",
+                    "animate-[uc-pop-in_400ms_ease-out]",
+                  )}
                 >
                   {word}
                 </span>
               ) : (
-                <span className={tx("text-subhead text-ink-subtle")}>加载中…</span>
+                <span
+                  className={tx(
+                    "text-subhead text-ink-subtle animate-[uc-breathe_1.4s_ease-in-out_infinite]",
+                  )}
+                >
+                  加载中…
+                </span>
               )}
             </>
           )}
         </div>
+        {!eliminated && word && (
+          <p className={tx("text-caption text-ink-tertiary text-center")}>
+            用一句话描述它，但别说破
+          </p>
+        )}
       </div>
 
       {/* 游戏信息 */}
@@ -87,7 +102,7 @@ function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className={tx("flex items-center justify-between")}>
       <dt className={tx("text-body-sm text-ink-subtle")}>{label}</dt>
-      <dd className={tx("text-body-sm text-ink font-medium")}>{value}</dd>
+      <dd className={tx("text-body-sm text-ink font-medium tabular-nums")}>{value}</dd>
     </div>
   );
 }

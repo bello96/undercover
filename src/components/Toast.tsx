@@ -42,18 +42,12 @@ export default function Toast({ message, type = "info", onClose, duration = 3000
         "fixed top-4 right-4 z-[9999] px-4 py-3 rounded-lg border",
         "text-body-sm font-medium max-w-sm cursor-pointer",
         "flex items-center gap-2",
-        "animate-[toast-in_200ms_ease-out]",
+        "animate-[uc-toast-in_220ms_ease-out]",
         TYPE_STYLES[type],
       )}
     >
       <span>{TYPE_ICONS[type]}</span>
       <span>{message}</span>
-      <style>{`
-        @keyframes toast-in {
-          from { transform: translateX(110%); opacity: 0; }
-          to   { transform: translateX(0);    opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }

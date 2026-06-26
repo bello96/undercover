@@ -19,7 +19,7 @@ const PHASE_INDEX: Record<string, number> = {
   ended: 3,
 };
 
-/** 底部阶段进度条：描述→投票→公示结果→下一轮，高亮当前阶段。 */
+/** 底部阶段进度条：描述→投票→公示结果→下一轮，高亮当前阶段（发光）。 */
 export default function PhaseStepper({ phase }: Props) {
   const current = PHASE_INDEX[phase] ?? 0;
 
@@ -37,9 +37,9 @@ export default function PhaseStepper({ phase }: Props) {
             <div className={tx("flex flex-col items-center gap-1")}>
               <div
                 className={tx(
-                  "w-8 h-8 rounded-full flex items-center justify-center text-caption transition-colors",
+                  "w-8 h-8 rounded-full flex items-center justify-center text-caption transition-all duration-300",
                   isActive
-                    ? "bg-primary text-on-primary"
+                    ? "bg-primary text-on-primary shadow-focus scale-110"
                     : isDone
                       ? "bg-surface-3 text-ink-muted border border-hairline-strong"
                       : "bg-surface-2 text-ink-tertiary border border-hairline",
@@ -49,7 +49,7 @@ export default function PhaseStepper({ phase }: Props) {
               </div>
               <span
                 className={tx(
-                  "text-caption whitespace-nowrap",
+                  "text-caption whitespace-nowrap transition-colors",
                   isActive ? "text-ink font-medium" : "text-ink-tertiary",
                 )}
               >
@@ -57,7 +57,12 @@ export default function PhaseStepper({ phase }: Props) {
               </span>
             </div>
             {i < STEPS.length - 1 && (
-              <div className={tx("w-8 h-px mb-4", isDone ? "bg-hairline-strong" : "bg-hairline")} />
+              <div
+                className={tx(
+                  "w-8 h-px mb-4 transition-colors",
+                  isDone ? "bg-primary" : "bg-hairline",
+                )}
+              />
             )}
           </div>
         );

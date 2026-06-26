@@ -88,7 +88,11 @@ const INITIAL_ROOM_VIEW: RoomView = {
 export default function Room({ roomCode, playerName, playerId, onLeave }: Props) {
   const [view, setView] = useState<RoomView>(INITIAL_ROOM_VIEW);
   const [joinError, setJoinError] = useState("");
-  const [toast, setToast] = useState<{ message: string; id: number; type: "error" | "info" | "success" } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    id: number;
+    type: "error" | "info" | "success";
+  } | null>(null);
   // 开局「你的词语」浮层：仅在收到 gameStarted 时弹（重连走 roomState 不弹）。
   const [showWordReveal, setShowWordReveal] = useState(false);
   const dismissWordReveal = useCallback(() => setShowWordReveal(false), []);
@@ -97,11 +101,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
   // 是否曾成功加入（收到 roomState + myId）。重连时跳过 10s 超时。
   const hasJoinedOnceRef = useRef(false);
 
-  const { connected, send, addListener, leave: wsLeave } = useWebSocket(
-    roomCode,
-    playerName,
-    playerId,
-  );
+  const {
+    connected,
+    send,
+    addListener,
+    leave: wsLeave,
+  } = useWebSocket(roomCode, playerName, playerId);
 
   const handleLeave = useCallback(() => {
     wsLeave();
@@ -180,6 +185,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
         break;
       }
 
+      case "hostChanged": {
+        // 房主中途离开后迁移：只更新 hostId（不动其它瞬时态）
+        setView((prev) => ({ ...prev, hostId: msg.hostId }));
+        break;
+      }
+
       case "gameStarted": {
         // 开局：弹「你的词语」浮层 + 进入首轮描述 + 清空本轮描述
         setShowWordReveal(true);
@@ -221,9 +232,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
       case "describeUpdate": {
         // 同时作答：任意存活者提交即广播；去重后追加（重连后 roomState 已含本轮）
         setView((prev) => {
-          if (
-            prev.descriptions.some((d) => d.playerId === msg.playerId && d.round === msg.round)
-          ) {
+          if (prev.descriptions.some((d) => d.playerId === msg.playerId && d.round === msg.round)) {
             return prev;
           }
           return {
@@ -258,9 +267,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
           },
           // 有出局者时本地立即标记出局，不等待 roomState 重发 players
           players: msg.eliminatedId
-            ? prev.players.map((p) =>
-                p.id === msg.eliminatedId ? { ...p, alive: false } : p,
-              )
+            ? prev.players.map((p) => (p.id === msg.eliminatedId ? { ...p, alive: false } : p))
             : prev.players,
         }));
         break;
@@ -417,7 +424,12 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
   );
 
   const toastEl = toast && (
-    <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+    <Toast
+      key={toast.id}
+      message={toast.message}
+      type={toast.type}
+      onClose={() => setToast(null)}
+    />
   );
 
   // 大厅：全屏（可自然增高/滚动）
@@ -487,6 +499,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
                 votedPlayerIds={votedPlayerIds}
                 tiebreakCandidates={tiebreakCandidates}
                 voteResult={voteResult}
+                connected={connected}
                 onSubmitDescribe={(text) => send({ type: "describe", text })}
                 onVote={(targetId) => send({ type: "vote", targetId })}
               />
@@ -499,6 +512,7 @@ export default function Room({ roomCode, playerName, playerId, onLeave }: Props)
                 messages={chatMessages}
                 players={players}
                 myId={myId}
+                connected={connected}
                 onSend={(text) => send({ type: "chat", text })}
               />
             </div>

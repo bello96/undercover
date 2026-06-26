@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { tx } from "@twind/core";
 import type { ChatEntry, PlayerInfo } from "../types/protocol";
+import Avatar from "./Avatar";
+import { colorForPlayer } from "../utils/playerColor";
 
 // 与服务端 constants.MAX_CHAT_LENGTH 保持一致
 const MAX_CHAT_LENGTH = 200;
@@ -9,11 +11,12 @@ interface Props {
   messages: ChatEntry[];
   players: PlayerInfo[];
   myId: string | null;
+  connected: boolean;
   onSend: (text: string) => void;
 }
 
-/** 右侧聊天面板：仅展示聊天消息（描述不进此处，描述显示在各玩家头像下方）。 */
-export default function ChatPanel({ messages, players, myId, onSend }: Props) {
+/** 右侧聊天面板：仅展示聊天消息（描述不进此处）。每人专属色头像 + 气泡。 */
+export default function ChatPanel({ messages, players, myId, connected, onSend }: Props) {
   const [input, setInput] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   const prevLengthRef = useRef(messages.length);
@@ -33,7 +36,7 @@ export default function ChatPanel({ messages, players, myId, onSend }: Props) {
 
   const handleSubmit = () => {
     const text = input.trim();
-    if (!text) {
+    if (!text || !connected) {
       return;
     }
     onSend(text);
@@ -47,26 +50,33 @@ export default function ChatPanel({ messages, players, myId, onSend }: Props) {
       )}
     >
       {/* Header */}
-      <div className={tx("px-4 py-3 border-b border-hairline shrink-0")}>
+      <div className={tx("px-4 py-3 border-b border-hairline shrink-0 flex items-center gap-1.5")}>
+        <span className={tx("text-body")}>💬</span>
         <span className={tx("text-body-sm font-medium text-ink-muted")}>聊天</span>
       </div>
 
       {/* 消息列表 */}
       <div ref={listRef} className={tx("flex-1 overflow-y-auto p-3 space-y-2 min-h-0")}>
         {messages.length === 0 && (
-          <div className={tx("text-caption text-ink-tertiary text-center py-2")}>暂无消息</div>
+          <div className={tx("text-caption text-ink-tertiary text-center py-6")}>
+            还没有人说话，先聊两句活跃下气氛吧～
+          </div>
         )}
         {messages.map((msg, idx) => {
           const isMe = msg.playerId === myId;
           const seat = seatOf(msg.playerId);
           const label = seat !== null ? `${seat}号 ${msg.playerName}` : msg.playerName;
+          const color = colorForPlayer(msg.playerId, players);
 
           if (isMe) {
             return (
-              <div key={`${msg.playerId}-${msg.timestamp}-${idx}`} className={tx("flex justify-end")}>
+              <div
+                key={`${msg.playerId}-${msg.timestamp}-${idx}`}
+                className={tx("flex justify-end animate-[uc-fade-up_220ms_ease-out]")}
+              >
                 <div
                   className={tx(
-                    "max-w-[80%] bg-primary text-on-primary rounded-lg px-3 py-1.5 text-caption break-words",
+                    "max-w-[80%] bg-primary text-on-primary rounded-lg rounded-tr-sm px-3 py-1.5 text-caption break-words",
                   )}
                 >
                   {msg.text}
@@ -76,18 +86,19 @@ export default function ChatPanel({ messages, players, myId, onSend }: Props) {
           }
 
           return (
-            <div key={`${msg.playerId}-${msg.timestamp}-${idx}`} className={tx("flex gap-2 items-start")}>
-              <span
-                className={tx(
-                  "w-7 h-7 rounded-full bg-surface-3 border border-hairline-strong shrink-0",
-                  "flex items-center justify-center text-caption text-ink-subtle",
-                )}
-              >
-                {msg.playerName.slice(0, 1).toUpperCase()}
-              </span>
+            <div
+              key={`${msg.playerId}-${msg.timestamp}-${idx}`}
+              className={tx("flex gap-2 items-start animate-[uc-fade-up_220ms_ease-out]")}
+            >
+              <Avatar name={msg.playerName} color={color} size={28} />
               <div className={tx("flex flex-col gap-0.5 min-w-0")}>
                 <span className={tx("text-caption text-ink-tertiary")}>{label}</span>
-                <div className={tx("rounded-lg px-3 py-1.5 text-caption break-words bg-surface-3 text-ink-muted")}>
+                <div
+                  className={tx(
+                    "rounded-lg rounded-tl-sm px-3 py-1.5 text-caption break-words bg-surface-3 text-ink-muted",
+                  )}
+                  style={{ borderLeft: `2px solid ${color}` }}
+                >
                   {msg.text}
                 </div>
               </div>
@@ -108,20 +119,22 @@ export default function ChatPanel({ messages, players, myId, onSend }: Props) {
               handleSubmit();
             }
           }}
-          placeholder="说点什么..."
+          placeholder={connected ? "说点什么…" : "重连中…"}
           maxLength={MAX_CHAT_LENGTH}
+          disabled={!connected}
           className={tx(
             "flex-1 px-3 py-2 text-caption bg-surface-2 border border-hairline rounded-lg text-ink",
-            "placeholder-ink-tertiary focus:outline-none focus:border-primary transition-colors",
+            "placeholder:text-ink-tertiary outline-none transition-shadow transition-colors",
+            "focus:border-primary-focus focus:shadow-focus disabled:opacity-50",
           )}
         />
         <button
           onClick={handleSubmit}
-          disabled={!input.trim()}
+          disabled={!input.trim() || !connected}
           className={tx(
-            "px-4 py-2 text-caption rounded-lg transition shrink-0",
-            input.trim()
-              ? "bg-primary text-on-primary hover:bg-primary-hover"
+            "px-4 py-2 text-caption rounded-lg transition-all shrink-0",
+            input.trim() && connected
+              ? "bg-primary text-on-primary hover:bg-primary-hover active:scale-95"
               : "bg-surface-3 text-ink-tertiary cursor-not-allowed",
           )}
         >

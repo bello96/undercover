@@ -85,22 +85,22 @@ export default function App() {
   // In room
   if (roomCode) {
     return (
-      <Room
-        roomCode={roomCode}
-        playerName={playerName}
-        playerId={playerId}
-        onLeave={leaveRoom}
-      />
+      <Room roomCode={roomCode} playerName={playerName} playerId={playerId} onLeave={leaveRoom} />
     );
   }
 
   // 深链接入房昵称框（覆盖首页）
   if (showNicknameModal) {
     return (
-      <div className={tx("min-h-screen bg-canvas flex items-center justify-center px-4")}>
+      <div
+        className={tx(
+          "min-h-screen bg-canvas flex items-center justify-center px-4 animate-[uc-fade-in_200ms_ease-out]",
+        )}
+      >
         <div
           className={tx(
             "w-full max-w-sm bg-surface-1 border border-hairline rounded-xl p-6 flex flex-col gap-4",
+            "shadow-card-strong animate-[uc-pop-in_280ms_ease-out]",
           )}
         >
           <div className={tx("flex flex-col gap-1")}>
@@ -122,8 +122,9 @@ export default function App() {
             maxLength={10}
             autoFocus
             className={tx(
-              "w-full bg-surface-2 text-ink text-body rounded-md px-3 py-2",
-              "border border-hairline outline-none focus:border-primary transition-colors",
+              "w-full bg-surface-2 text-ink text-body rounded-md px-3 py-2.5",
+              "border border-hairline outline-none transition-shadow transition-colors",
+              "focus:border-primary-focus focus:shadow-focus",
               "placeholder:text-ink-tertiary",
             )}
           />
@@ -131,9 +132,9 @@ export default function App() {
             onClick={handleNicknameConfirm}
             disabled={!modalName.trim()}
             className={tx(
-              "w-full py-2.5 px-4 text-button font-medium rounded-md transition-colors",
+              "w-full py-2.5 px-4 text-button font-medium rounded-md transition-all",
               modalName.trim()
-                ? "bg-primary text-on-primary hover:bg-primary-hover"
+                ? "bg-primary text-on-primary hover:bg-primary-hover active:scale-[0.98]"
                 : "bg-surface-2 text-ink-tertiary border border-hairline cursor-not-allowed",
             )}
           >

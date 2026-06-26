@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { tx } from "@twind/core";
 import type { PlayerInfo, ClientMessage } from "../types/protocol";
+import Avatar from "./Avatar";
+import { colorForIndex } from "../utils/playerColor";
 
 interface Props {
   roomCode: string;
@@ -58,25 +60,35 @@ export default function Lobby({ roomCode, players, hostId, maxPlayers, myId, sen
       <div
         className={tx(
           "w-full max-w-md bg-surface-1 border border-hairline rounded-xl p-8 flex flex-col gap-6",
+          "shadow-card animate-[uc-fade-up_500ms_ease-out_both]",
         )}
       >
         {/* 房间号 */}
         <div className={tx("text-center flex flex-col items-center gap-3")}>
-          <p className={tx("text-body-sm text-ink-subtle uppercase tracking-widest")}>房间号</p>
+          <p className={tx("text-caption text-ink-subtle uppercase tracking-[0.2em]")}>房间号</p>
           <button
             onClick={handleCopyCode}
             className={tx(
               "relative inline-flex items-center gap-2 px-4 py-2 rounded-lg",
               "bg-surface-2 border border-hairline hover:border-hairline-strong",
-              "transition-colors cursor-pointer group",
+              "transition-all active:scale-[0.98] cursor-pointer group",
             )}
             title="点击复制房间号"
           >
-            <span className={tx("text-display-md font-display font-semibold text-ink tracking-widest")}>
+            <span
+              className={tx(
+                "text-display-md font-display font-semibold text-ink tracking-[0.15em]",
+              )}
+            >
               {roomCode}
             </span>
-            <span className={tx("text-ink-subtle text-caption group-hover:text-ink-muted transition-colors")}>
-              {codeCopied ? "已复制" : "复制"}
+            <span
+              className={tx(
+                "text-caption transition-colors",
+                codeCopied ? "text-semantic-success" : "text-ink-subtle group-hover:text-ink-muted",
+              )}
+            >
+              {codeCopied ? "✓ 已复制" : "复制"}
             </span>
           </button>
 
@@ -87,8 +99,10 @@ export default function Lobby({ roomCode, players, hostId, maxPlayers, myId, sen
                 onClick={handleCopyLink}
                 className={tx(
                   "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-button font-medium",
-                  "bg-surface-2 border border-hairline text-ink-muted",
-                  "hover:text-ink hover:border-hairline-strong transition-colors",
+                  "bg-surface-2 border border-hairline transition-all active:scale-[0.98]",
+                  linkCopied
+                    ? "text-semantic-success border-semantic-success"
+                    : "text-ink-muted hover:text-ink hover:border-hairline-strong",
                 )}
               >
                 🔗 {linkCopied ? "链接已复制" : "复制房间链接"}
@@ -104,47 +118,71 @@ export default function Lobby({ roomCode, players, hostId, maxPlayers, myId, sen
         <div>
           <div className={tx("flex items-center justify-between mb-3")}>
             <span className={tx("text-body-sm text-ink-muted font-medium")}>玩家</span>
-            <span className={tx("text-body-sm text-ink-subtle")}>
+            <span className={tx("text-body-sm text-ink-subtle tabular-nums")}>
               {playerCount} / {maxPlayers}
             </span>
           </div>
           <ul className={tx("flex flex-col gap-2")}>
-            {players.map((player) => (
-              <li
-                key={player.id}
-                className={tx(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-2 border border-hairline",
-                )}
-              >
-                <span
+            {players.map((player, i) => {
+              const isMe = player.id === myId;
+              return (
+                <li
+                  key={player.id}
                   className={tx(
-                    "w-7 h-7 rounded-full bg-surface-3 border border-hairline-strong shrink-0",
-                    "flex items-center justify-center text-caption text-ink-subtle font-medium",
+                    "flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-2 border",
+                    "animate-[uc-fade-up_400ms_ease-out_both]",
+                    isMe ? "border-hairline-strong" : "border-hairline",
                   )}
+                  style={{ animationDelay: `${i * 50}ms` }}
                 >
-                  {player.name.slice(0, 1).toUpperCase()}
-                </span>
-                <span className={tx("text-body text-ink flex-1 truncate")}>{player.name}</span>
-                {player.id === myId && (
-                  <span className={tx("text-caption text-ink-subtle bg-surface-3 border border-hairline rounded px-1.5 py-0.5 shrink-0")}>
-                    我
-                  </span>
-                )}
-                {player.isHost ? (
-                  <span className={tx("text-caption text-primary bg-surface-3 border border-hairline rounded px-1.5 py-0.5 shrink-0")}>
-                    房主
-                  </span>
-                ) : player.ready ? (
-                  <span className={tx("text-caption text-semantic-success bg-surface-3 border border-hairline rounded px-1.5 py-0.5 shrink-0")}>
-                    ✓ 已准备
-                  </span>
-                ) : (
-                  <span className={tx("text-caption text-ink-tertiary bg-surface-3 border border-hairline rounded px-1.5 py-0.5 shrink-0")}>
-                    未准备
-                  </span>
-                )}
-              </li>
-            ))}
+                  <Avatar name={player.name} color={colorForIndex(i)} size={34}>
+                    {player.isHost && (
+                      <span
+                        className={tx("absolute -top-2.5 left-1/2 -translate-x-1/2 text-[13px]")}
+                      >
+                        👑
+                      </span>
+                    )}
+                  </Avatar>
+                  <span className={tx("text-body text-ink flex-1 truncate")}>{player.name}</span>
+                  {isMe && (
+                    <span
+                      className={tx(
+                        "text-caption text-ink-subtle bg-surface-3 border border-hairline rounded px-1.5 py-0.5 shrink-0",
+                      )}
+                    >
+                      我
+                    </span>
+                  )}
+                  {player.isHost ? (
+                    <span
+                      className={tx(
+                        "text-caption text-primary bg-surface-3 border border-hairline rounded px-1.5 py-0.5 shrink-0",
+                      )}
+                    >
+                      房主
+                    </span>
+                  ) : player.ready ? (
+                    <span
+                      className={tx(
+                        "text-caption text-semantic-success bg-surface-3 border border-semantic-success rounded px-1.5 py-0.5 shrink-0",
+                        "animate-[uc-pop_300ms_ease-out]",
+                      )}
+                    >
+                      ✓ 已准备
+                    </span>
+                  ) : (
+                    <span
+                      className={tx(
+                        "text-caption text-ink-tertiary bg-surface-3 border border-hairline rounded px-1.5 py-0.5 shrink-0",
+                      )}
+                    >
+                      未准备
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
 
@@ -156,9 +194,9 @@ export default function Lobby({ roomCode, players, hostId, maxPlayers, myId, sen
                 onClick={handleStartGame}
                 disabled={!canStart}
                 className={tx(
-                  "w-full px-4 py-3 rounded-lg text-button font-medium transition-colors",
+                  "w-full px-4 py-3 rounded-lg text-button font-medium transition-all",
                   canStart
-                    ? "bg-primary text-on-primary hover:bg-primary-hover cursor-pointer"
+                    ? "bg-primary text-on-primary hover:bg-primary-hover active:scale-[0.98] cursor-pointer shadow-card"
                     : "bg-surface-3 text-ink-subtle border border-hairline cursor-not-allowed",
                 )}
               >
@@ -177,10 +215,10 @@ export default function Lobby({ roomCode, players, hostId, maxPlayers, myId, sen
               <button
                 onClick={handleToggleReady}
                 className={tx(
-                  "w-full px-4 py-3 rounded-lg text-button font-medium transition-colors",
+                  "w-full px-4 py-3 rounded-lg text-button font-medium transition-all active:scale-[0.98]",
                   myReady
                     ? "bg-surface-3 text-ink-muted border border-hairline-strong hover:text-ink cursor-pointer"
-                    : "bg-primary text-on-primary hover:bg-primary-hover cursor-pointer",
+                    : "bg-primary text-on-primary hover:bg-primary-hover cursor-pointer shadow-card",
                 )}
               >
                 {myReady ? "取消准备" : "准备"}
