@@ -9,39 +9,37 @@ install({
   theme: {
     extend: {
       colors: {
-        // Brand & Accent
+        // Brand & Accent —— 保留 Linear 标志性 lavender-blue 品牌主色
         primary: "#5e6ad2",
-        "primary-hover": "#828fff",
-        "primary-focus": "#5e69d1",
+        "primary-hover": "#4f5bc7", // 亮色模式：hover 加深（暗色模式是变亮）
+        "primary-focus": "#4a56bd",
         "on-primary": "#ffffff",
-        // Text
-        ink: "#f7f8f8",
-        "ink-muted": "#d0d6e0",
-        "ink-subtle": "#8a8f98",
-        "ink-tertiary": "#62666d",
-        // Surface ladder
-        canvas: "#010102",
-        "surface-1": "#0f1011",
-        "surface-2": "#141516",
-        "surface-3": "#18191a",
-        "surface-4": "#191a1b",
-        // Borders
-        hairline: "#23252a",
-        "hairline-strong": "#34343a",
-        "hairline-tertiary": "#3e3e44",
+        // Text —— 亮色模式：近黑文字（非纯黑，呼应 Linear 克制）
+        ink: "#16181d",
+        "ink-muted": "#42464e",
+        "ink-subtle": "#6b7078",
+        "ink-tertiary": "#9aa0a8",
+        // Surface ladder —— 亮色模式：灰白页面底 → 纯白卡片浮起 → 浅灰内嵌
+        canvas: "#f6f7f9",
+        "surface-1": "#ffffff",
+        "surface-2": "#eef0f2",
+        "surface-3": "#e6e9ed",
+        "surface-4": "#dee1e6",
+        // Borders —— 亮色模式：浅灰描边
+        hairline: "#e3e5ea",
+        "hairline-strong": "#d0d4da",
+        "hairline-tertiary": "#c0c5cd",
         // Brand
-        "brand-secure": "#7a7fad",
-        // Semantic
-        "semantic-success": "#27a644",
-        // DESIGN.md 未定义 error/danger 语义色（营销画布刻意避红）；
-        // 取 Linear 产品内 issue 优先级红系的柔和红，贴合深色风格。
-        "semantic-error": "#eb5757",
-        "semantic-overlay": "#000000",
-        // Inverse (for rare inverse CTAs)
-        "inverse-canvas": "#ffffff",
-        "inverse-surface-1": "#f5f6f6",
-        "inverse-surface-2": "#f6f7f7",
-        "inverse-ink": "#000000",
+        "brand-secure": "#565b86",
+        // Semantic（亮底友好：足够深以保证可读对比）
+        "semantic-success": "#157f37",
+        "semantic-error": "#d92d20",
+        "semantic-overlay": "#000000", // 模态遮罩底色，配 bg-opacity 压暗背景
+        // Inverse（亮色主题下的反色块：暗底白字，少量反色 CTA 用）
+        "inverse-canvas": "#16181d",
+        "inverse-surface-1": "#23252b",
+        "inverse-surface-2": "#2c2f36",
+        "inverse-ink": "#ffffff",
       },
       fontFamily: {
         // Linear Display fallback stack (custom typeface not publicly distributed)
@@ -95,13 +93,13 @@ install({
         full: "9999px",
       },
       boxShadow: {
-        // Linear uses surface ladder + hairline borders, minimal drop shadows on dark
+        // 亮色模式：用柔和投影做卡片浮起（暗色模式用的是 1px 描边）
         // Level 1: card lift
-        card: "0 0 0 1px #23252a",
+        card: "0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.10)",
         // Level 2: featured card
-        "card-strong": "0 0 0 1px #34343a",
-        // Focus ring: 2px primary-focus outline at 50% opacity
-        focus: "0 0 0 2px rgba(94, 105, 209, 0.5)",
+        "card-strong": "0 4px 12px rgba(16, 24, 40, 0.12), 0 2px 6px rgba(16, 24, 40, 0.06)",
+        // Focus ring: 2px primary-focus outline
+        focus: "0 0 0 2px rgba(94, 105, 209, 0.40)",
       },
     },
   },

@@ -4,11 +4,11 @@ import type { DescribeEntry, GamePhase, PlayerInfo, Role } from "../types/protoc
 import Avatar from "./Avatar";
 import { colorForIndex } from "../utils/playerColor";
 
-const GOLD = "#e3b341";
-const RED = "#eb5757";
+const GOLD = "#e3b341"; // 房主描边金（彩色头像上可见，保留）
+const RED = "#d92d20"; // 卧底揭晓描边（亮底友好红）
 const PRIMARY = "#5e6ad2";
-const INK = "#f7f8f8";
-const HAIRLINE = "#23252a";
+const INK = "#16181d"; // 本人头像描边：亮色模式近黑
+const HAIRLINE = "#d0d4da"; // 默认头像描边：亮色模式浅灰
 
 const CLAMP_2: React.CSSProperties = {
   display: "-webkit-box",

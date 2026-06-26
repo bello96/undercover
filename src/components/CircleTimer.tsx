@@ -9,9 +9,9 @@ const PHASE_TOTAL_SEC: Partial<Record<GamePhase, number>> = {
   reveal: 5,
 };
 
-const GOLD = "#e3b341";
-const RED = "#eb5757";
-const TRACK = "#34343a";
+const GOLD = "#c0871c"; // 倒计时金：亮底加深以保证可读
+const RED = "#d92d20"; // 最后 10s 转红（亮底友好红）
+const TRACK = "#e6e9ed"; // 轨道：亮色模式浅灰
 
 /** 顶部圆环倒计时：金色环 + 中央剩余秒数，最后 10s 转红并呼吸；无倒计时阶段显示静态环。 */
 export default function CircleTimer({ deadline, phase }: { deadline?: number; phase: GamePhase }) {

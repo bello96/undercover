@@ -1,31 +1,33 @@
 ---
 version: alpha
 name: Linear-design-analysis
-description: "A near-black product-focused marketing canvas built around #010102 (the deepest dark surface of any tool in this collection), light gray text (#f7f8f8), and the signature Linear lavender-blue (#5e6ad2) used as the single chromatic accent. The system reads as software-craft documentation: dense, technical, and quietly luxurious. Display type is set in the Linear custom sans (SF Pro Display fallback) at 500–700 with measured negative tracking. Cards live as charcoal panels (#0f1011) with hairline borders. The accent lavender appears on the brand mark, focus rings, and a few intentional CTAs — never decoratively. Page rhythm leans on product UI screenshots framed in dark panels rather than atmospheric color."
+description: "A light product-focused canvas (谁是卧底 / Undercover) on a soft off-white page surface (#f6f7f9) with pure-white lifted cards (#ffffff), near-black ink (#16181d), and the signature Linear lavender-blue (#5e6ad2) kept as the single chromatic accent. Adapted from Linear's dark marketing system: the same Linear Display/Text scale with negative tracking, the same surface-ladder + hairline hierarchy and restrained color — only the palette is flipped to light, with soft drop shadows replacing the dark 1px-border lift. See the Light-Mode override note below the front matter."
 
 colors:
+  # 亮色模式（Light Mode）token —— 与 src/main.tsx 一致；main.tsx 为运行时真源
   primary: "#5e6ad2"
   on-primary: "#ffffff"
-  primary-hover: "#828fff"
-  primary-focus: "#5e69d1"
-  ink: "#f7f8f8"
-  ink-muted: "#d0d6e0"
-  ink-subtle: "#8a8f98"
-  ink-tertiary: "#62666d"
-  canvas: "#010102"
-  surface-1: "#0f1011"
-  surface-2: "#141516"
-  surface-3: "#18191a"
-  surface-4: "#191a1b"
-  hairline: "#23252a"
-  hairline-strong: "#34343a"
-  hairline-tertiary: "#3e3e44"
-  inverse-canvas: "#ffffff"
-  inverse-surface-1: "#f5f6f6"
-  inverse-surface-2: "#f6f7f7"
-  inverse-ink: "#000000"
-  brand-secure: "#7a7fad"
-  semantic-success: "#27a644"
+  primary-hover: "#4f5bc7"
+  primary-focus: "#4a56bd"
+  ink: "#16181d"
+  ink-muted: "#42464e"
+  ink-subtle: "#6b7078"
+  ink-tertiary: "#9aa0a8"
+  canvas: "#f6f7f9"
+  surface-1: "#ffffff"
+  surface-2: "#eef0f2"
+  surface-3: "#e6e9ed"
+  surface-4: "#dee1e6"
+  hairline: "#e3e5ea"
+  hairline-strong: "#d0d4da"
+  hairline-tertiary: "#c0c5cd"
+  inverse-canvas: "#16181d"
+  inverse-surface-1: "#23252b"
+  inverse-surface-2: "#2c2f36"
+  inverse-ink: "#ffffff"
+  brand-secure: "#565b86"
+  semantic-success: "#157f37"
+  semantic-error: "#d92d20"
   semantic-overlay: "#000000"
 
 typography:
@@ -255,6 +257,22 @@ components:
     padding: 64px 32px
 ---
 
+## ⚠️ 项目主题覆盖：亮色模式（Light Mode）
+
+> 本项目（**谁是卧底 / Undercover**）已采用**亮色主题**。上方 front-matter 的 `colors` 即当前生效的亮色 token 值，与 `src/main.tsx` 的 Twind 配置一致（**`main.tsx` 为运行时真源**）。
+>
+> 下方正文是本设计系统所参考的 **Linear 官方暗色营销画布**分析，保留作为**设计语言参考**：其字体字阶（Linear Display/Text + 负字距）、间距、圆角、层次（surface 阶梯 + hairline 描边）、克制用色等原则**仍然适用**；**仅色板由暗色反转为亮色**——
+
+| 角色 | 暗色（原 Linear 参考） | 亮色（本项目现行） |
+|---|---|---|
+| 页面底 canvas | #010102 近黑 | #f6f7f9 灰白 |
+| 卡片 surface-1 | #0f1011 charcoal | #ffffff 纯白 |
+| 主文字 ink | #f7f8f8 浅灰 | #16181d 近黑 |
+| 卡片浮起 | 1px hairline 描边 | 柔和投影（box-shadow） |
+| 主色 primary | #5e6ad2 lavender | #5e6ad2（**不变**） |
+
+> 因此下文出现「near-black canvas / charcoal cards / light gray text」等暗色表述，按上表映射理解为其亮色对应即可。
+
 ## Overview
 
 Linear's marketing canvas is the deepest dark surface in this collection — `{colors.canvas}` is #010102, essentially pure black with a faint blue tint. On top sits a four-step surface ladder (`{colors.surface-1}` through `{colors.surface-4}`) for cards, panels, and lifted tiles, with hairline borders running from `{colors.hairline}` (#23252a) up through `{colors.hairline-strong}` and `{colors.hairline-tertiary}`. Light gray text (`{colors.ink}` #f7f8f8) carries the body and headlines.
@@ -481,7 +499,7 @@ Linear's depth is carried by surface ladder + hairline borders. The brand resist
 
 ### Do
 
-- Reserve `{colors.canvas}` (#010102) as the system's anchor surface — the faint blue tint is intentional.
+- Reserve `{colors.canvas}` as the system's anchor surface — 亮色模式为灰白 #f6f7f9（纯白 #ffffff 留给浮起卡片，保留对比空间）。
 - Use `{colors.primary}` lavender ONLY for: brand mark, primary CTA, focus ring, link emphasis.
 - Use the four-step surface ladder for hierarchy. Avoid skipping levels.
 - Pair display weight 600 with body weight 400 — Linear resists 700+ display weights.
@@ -491,12 +509,12 @@ Linear's depth is carried by surface ladder + hairline borders. The brand resist
 
 ### Don't
 
-- Don't ship a light-mode marketing page.
+- ~~Don't ship a light-mode page.~~ 本项目已切换为**亮色主题**（见顶部「项目主题覆盖」）；保持单一 lavender 主色、克制用色的原则不变。
 - Don't use lavender as a section background or card fill.
 - Don't introduce a second chromatic accent (orange, pink, green for marketing).
 - Don't add atmospheric gradients or spotlight cards.
 - Don't pill-round CTAs.
-- Don't use `#000000` true black as the canvas.
+- Don't use pure-white `#ffffff` as the page canvas — 用灰白 #f6f7f9 作页面底，纯白留给浮起卡片。`#000000` 仅用于模态遮罩底（配 bg-opacity）。
 - Don't combine multiple bright accents in product screenshot mockups.
 
 ## Responsive Behavior
@@ -543,6 +561,6 @@ Linear's depth is carried by surface ladder + hairline borders. The brand resist
 
 - The four-step surface ladder values are extracted directly from Linear's `--color-bg-level-3`, `--color-line-tint`, etc. CSS variables; they are Linear's canonical surface spec.
 - Form-field error and validation styling is not visible on the inspected pages.
-- Light mode is not documented because the marketing site does not ship a light theme.
+- Light mode：本项目已落地**亮色主题**（见顶部「项目主题覆盖」与 front-matter `colors`）；原始 Linear 营销站不提供亮色，故下文正文以暗色参考为准、按映射表理解。
 - Linear's actual product UI uses a richer color-tag palette (red, orange, yellow, green, blue, purple) for issue priorities and project labels — those colors live in the in-product surfaces shown in mockups.
 - The custom display, text, and mono families are proprietary; an open-source substitute is acceptable.
