@@ -118,10 +118,40 @@ export default function Home({ onEnterRoom }: HomeProps) {
 
   return (
     <div
-      className={tx("min-h-screen bg-canvas flex flex-col items-center justify-center px-4 py-12")}
+      className={tx(
+        "relative min-h-screen overflow-hidden flex flex-col items-center justify-center px-4 py-12",
+      )}
+      style={{ background: "linear-gradient(160deg, #eef0fb 0%, #f6f7f9 46%, #edf0f8 100%)" }}
     >
+      {/* 背景柔光氛围：低饱和主题色光斑（lavender/青/紫），大模糊 + 低透明，烘托气氛而不抢内容 */}
+      <div className={tx("pointer-events-none absolute inset-0")} aria-hidden="true">
+        <div
+          className={tx("absolute -top-[12%] -left-[8%] w-[60%] h-[60%] rounded-full")}
+          style={{
+            background: "radial-gradient(circle, rgba(94, 106, 210, 0.22), transparent 70%)",
+            filter: "blur(40px)",
+          }}
+        />
+        <div
+          className={tx("absolute -bottom-[16%] -right-[10%] w-[55%] h-[55%] rounded-full")}
+          style={{
+            background: "radial-gradient(circle, rgba(38, 179, 163, 0.14), transparent 70%)",
+            filter: "blur(48px)",
+          }}
+        />
+        <div
+          className={tx("absolute top-[28%] right-[18%] w-[34%] h-[34%] rounded-full")}
+          style={{
+            background: "radial-gradient(circle, rgba(155, 106, 210, 0.12), transparent 70%)",
+            filter: "blur(40px)",
+          }}
+        />
+      </div>
+
       {/* 品牌标题区 */}
-      <div className={tx("text-center mb-9 animate-[uc-fade-up_500ms_ease-out_both]")}>
+      <div
+        className={tx("relative z-10 text-center mb-9 animate-[uc-fade-up_500ms_ease-out_both]")}
+      >
         <div
           className={tx(
             "w-14 h-14 mx-auto mb-4 rounded-xl bg-primary flex items-center justify-center",
@@ -138,13 +168,18 @@ export default function Home({ onEnterRoom }: HomeProps) {
         <p className={tx("text-body text-ink-muted")}>3–6 人在线联机，找出隐藏的卧底</p>
       </div>
 
-      {/* 主卡片 */}
+      {/* 主卡片（毛玻璃：半透明白 + backdrop-blur，透出背景柔光与光斑） */}
       <div
         className={tx(
-          "w-full max-w-sm bg-surface-1 rounded-xl border border-hairline p-6",
-          "shadow-card animate-[uc-fade-up_600ms_ease-out_both]",
+          "relative z-10 w-full max-w-sm rounded-xl p-6 border border-[#ffffffb3]",
+          "shadow-card-strong animate-[uc-fade-up_600ms_ease-out_both]",
         )}
-        style={{ animationDelay: "80ms" }}
+        style={{
+          animationDelay: "80ms",
+          background: "rgba(255, 255, 255, 0.72)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+        }}
       >
         {/* 一级菜单 */}
         {mode === "menu" && (
@@ -279,7 +314,8 @@ export default function Home({ onEnterRoom }: HomeProps) {
       {mode === "menu" && (
         <p
           className={tx(
-            "mt-8 text-caption text-ink-tertiary text-center animate-[uc-fade-in_900ms_ease-out_both]",
+            "relative z-10 mt-8 text-caption text-ink-tertiary text-center",
+            "animate-[uc-fade-in_900ms_ease-out_both]",
           )}
         >
           无需登录，支持 3–6 人在线一起玩
